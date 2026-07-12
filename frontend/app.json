@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "八股记忆",
+    "slug": "bagu-memory",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "bagu-memory",
+    "splash": {
+      "backgroundColor": "#d4c5b5"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bagumemory.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#d4c5b5",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.bagumemory.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-splash-screen"
+    ]
+  }
+}

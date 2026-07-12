@@ -1,0 +1,96 @@
+import { Platform } from "react-native";
+import { SAMPLE_DOCUMENTS } from "./sample-docs";
+import { genId } from "./utils";
+
+let db: any = null;
+
+export async function getDb(): Promise<any> {
+  if (db) return db;
+
+  if (Platform.OS === "web") {
+    const { getDb: webGetDb } = await import("./db.web");
+    db = await webGetDb();
+    return db;
+  }
+
+  const SQLite = await import("expo-sqlite");
+  db = await SQLite.openDatabaseAsync("bagu-memory.db");
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS questions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local',
+      cat TEXT NOT NULL,
+      q TEXT NOT NULL,
+      a TEXT NOT NULL,
+      source TEXT DEFAULT '',
+      tags TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS card_progress (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local',
+      question_id TEXT NOT NULL,
+      level INTEGER DEFAULT 0,
+      correct INTEGER DEFAULT 0,
+      incorrect INTEGER DEFAULT 0,
+      last_review TEXT,
+      next_review TEXT,
+      is_starred INTEGER DEFAULT 0,
+      UNIQUE(user_id, question_id)
+    );
+    CREATE TABLE IF NOT EXISTS study_records (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'local',
+      date TEXT NOT NULL,
+      count INTEGER DEFAULT 0,
+      correct INTEGER DEFAULT 0,
+      incorrect INTEGER DEFAULT 0,
+      UNIQUE(user_id, date)
+    );
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      cat TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source TEXT DEFAULT '',
+      tags TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  return db;
+}
+
+export async function insertSampleData() {
+  const database = await getDb();
+
+  const row: any = await database.getFirstAsync("SELECT COUNT(*) as cnt FROM questions");
+  const qCount = row?.cnt ?? 0;
+  if (qCount === 0) {
+    const samples = [
+      { cat: "JavaScript", q: "什么是闭包（Closure）？", a: "闭包是指函数能够记住并访问其词法作用域中的变量，即使该函数在其词法作用域之外执行。" },
+      { cat: "JavaScript", q: "解释一下事件循环（Event Loop）", a: "JavaScript 是单线程的，事件循环负责执行代码、收集和处理事件。宏任务 → 微任务 → 渲染。" },
+      { cat: "React", q: "useEffect 的依赖数组有什么作用？", a: "告诉 React 只在特定值发生变化时才重新运行 effect。空数组 [] 表示仅在挂载和卸载时运行。" },
+      { cat: "React", q: "什么是 Virtual DOM？", a: "Virtual DOM 是真实 DOM 的轻量级 JavaScript 对象表示。React 通过 diff 算法比较新旧 Virtual DOM，最小化实际 DOM 操作。" },
+      { cat: "CSS", q: "Flexbox 和 Grid 有什么区别？", a: "Flexbox 是一维布局（行或列），Grid 是二维布局（行和列同时控制）。" },
+      { cat: "网络", q: "HTTP 和 HTTPS 有什么区别？", a: "HTTPS = HTTP + SSL/TLS 加密。HTTPS 通过证书验证身份，数据加密传输。" },
+    ];
+    for (const s of samples) {
+      const id = genId();
+      await database.runAsync("INSERT INTO questions (id, user_id, cat, q, a) VALUES (?, 'local', ?, ?, ?)", [id, s.cat, s.q, s.a]);
+      await database.runAsync("INSERT INTO card_progress (id, user_id, question_id, level) VALUES (?, 'local', ?, 0)", [genId(), id]);
+    }
+  }
+
+  const docRow: any = await database.getFirstAsync("SELECT COUNT(*) as cnt FROM documents");
+  const dCount = docRow?.cnt ?? 0;
+  if (dCount === 0) {
+    for (const doc of SAMPLE_DOCUMENTS) {
+      await database.runAsync(
+        "INSERT INTO documents (id, title, cat, content, source) VALUES (?, ?, ?, ?, ?)",
+        [genId(), doc.title, doc.cat, doc.content, doc.source]
+      );
+    }
+  }
+}

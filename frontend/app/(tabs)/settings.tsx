@@ -86,12 +86,15 @@ export default function SettingsScreen() {
       
       // Push questions
       const allQuestions: any[] = await database.getAllAsync(
-        "SELECT id, cat, q, a, source, tags, created_at FROM questions"
+        "SELECT id, cat, q, a, source, source_document_id, tags, created_at FROM questions"
       );
       const allProgress: any[] = await database.getAllAsync(
         "SELECT id, question_id, level, correct, incorrect, last_review, next_review, is_starred FROM card_progress"
       );
-      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: allProgress }, token);
+      const allDocuments: any[] = await database.getAllAsync(
+        "SELECT id, title, cat, content, source, created_at FROM documents"
+      );
+      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: allProgress, documents: allDocuments }, token);
       
       // Pull
       const data: any = await apiRequest("/api/v1/sync/pull", undefined, token);
@@ -104,10 +107,34 @@ export default function SettingsScreen() {
         );
         if (!existing) {
           await database.runAsync(
-            "INSERT OR IGNORE INTO questions (id, user_id, cat, q, a, source, tags, created_at) VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?)",
-            [q.id, q.cat, q.q, q.a, q.source || "", JSON.stringify(q.tags || []), q.created_at || new Date().toISOString()]
+            "INSERT OR IGNORE INTO questions (id, user_id, cat, q, a, source, source_document_id, tags, created_at) VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?, ?)",
+            [
+              q.id,
+              q.cat,
+              q.q,
+              q.a,
+              q.source || "",
+              q.source_document_id || null,
+              JSON.stringify(q.tags || []),
+              q.created_at || new Date().toISOString(),
+            ]
           );
           imported++;
+        }
+      }
+
+      let importedDocuments = 0;
+      for (const doc of data.documents ?? []) {
+        const existing = await database.getFirstAsync(
+          "SELECT id FROM documents WHERE id = ?",
+          [doc.id]
+        );
+        if (!existing) {
+          await database.runAsync(
+            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", doc.created_at || new Date().toISOString()]
+          );
+          importedDocuments++;
         }
       }
 
@@ -159,7 +186,7 @@ export default function SettingsScreen() {
       }
       
       setLastSync(new Date().toLocaleString());
-      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题 / ${allProgress.length} 条进度, 下载 ${imported} 题 / ${mergedProgress} 条进度`);
+      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题 / ${allProgress.length} 条进度 / ${allDocuments.length} 篇文档, 下载 ${imported} 题 / ${mergedProgress} 条进度 / ${importedDocuments} 篇文档`);
     } catch (e: any) {
       Alert.alert("同步失败", e.message || "请检查后端是否已启动");
     }

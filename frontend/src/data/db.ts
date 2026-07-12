@@ -24,6 +24,7 @@ export async function getDb(): Promise<any> {
       q TEXT NOT NULL,
       a TEXT NOT NULL,
       source TEXT DEFAULT '',
+      source_document_id TEXT DEFAULT NULL,
       tags TEXT DEFAULT '[]',
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -58,6 +59,11 @@ export async function getDb(): Promise<any> {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  const questionColumns: { name: string }[] = await db.getAllAsync("PRAGMA table_info(questions)");
+  if (!questionColumns.some((column) => column.name === "source_document_id")) {
+    await db.execAsync("ALTER TABLE questions ADD COLUMN source_document_id TEXT DEFAULT NULL");
+  }
 
   return db;
 }

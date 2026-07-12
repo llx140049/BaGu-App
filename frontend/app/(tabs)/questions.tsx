@@ -10,7 +10,7 @@ import FilePicker from "../../src/components/FilePicker";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 
 interface DocItem { id: string; title: string; cat: string; source: string; }
-interface QItem { id: string; cat: string; q: string; }
+interface QItem { id: string; cat: string; q: string; source_document_id?: string | null; }
 type Tab = "questions" | "knowledge";
 
 export default function QuestionsScreen() {
@@ -35,7 +35,7 @@ export default function QuestionsScreen() {
     const database = await getDb();
     const docRows: DocItem[] = await database.getAllAsync("SELECT id, title, cat, source FROM documents ORDER BY created_at");
     setDocs(docRows);
-    const qRows: QItem[] = await database.getAllAsync("SELECT id, cat, q FROM questions ORDER BY cat");
+    const qRows: QItem[] = await database.getAllAsync("SELECT id, cat, q, source_document_id FROM questions ORDER BY cat");
     setQuestions(qRows);
   }, []);
 
@@ -63,11 +63,26 @@ export default function QuestionsScreen() {
       });
 
       const database = await getDb();
+      const docContent = result.questions
+        .map((q: any, index: number) => `## ${index + 1}. ${q.cat}\n\nQ: ${q.q}\n\nA: ${q.a}`)
+        .join("\n\n");
+      await database.runAsync(
+        "INSERT OR REPLACE INTO documents (id, title, cat, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          result.document_id,
+          result.file_name,
+          "导入文档",
+          docContent || `来自 ${result.file_name} 的题库导入结果`,
+          "AI 导入",
+          new Date().toISOString(),
+        ]
+      );
+
       for (const q of result.questions) {
         const id = genId();
         await database.runAsync(
-          "INSERT INTO questions (id, user_id, cat, q, a) VALUES (?, 'local', ?, ?, ?)",
-          [id, q.cat, q.q, q.a]
+          "INSERT INTO questions (id, user_id, cat, q, a, source, source_document_id) VALUES (?, 'local', ?, ?, ?, ?, ?)",
+          [id, q.cat, q.q, q.a, q.source || "", q.source_document_id || null]
         );
         await database.runAsync(
           "INSERT INTO card_progress (id, user_id, question_id, level) VALUES (?, 'local', ?, 0)",
@@ -128,6 +143,9 @@ export default function QuestionsScreen() {
               <View key={q.id} style={[styles.qCard, { backgroundColor: surface }]}>
                 <Text style={[styles.qCat, { color: colors.primary }]}>{q.cat}</Text>
                 <Text style={[styles.qText, { color: c }]} numberOfLines={2}>{q.q}</Text>
+                {q.source_document_id ? (
+                  <Text style={[styles.qSource, { color: colors.textTertiary }]}>来源：文档</Text>
+                ) : null}
               </View>
             ))
           )
@@ -181,6 +199,7 @@ const styles = StyleSheet.create({
   qCard: { borderRadius: 10, padding: 14, marginBottom: 8 },
   qCat: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
   qText: { fontSize: 14, lineHeight: 20 },
+  qSource: { fontSize: 11, marginTop: 6 },
   docCard: { borderRadius: 12, padding: 18, marginBottom: 10 },
   docHeader: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 6 },
   docCat: { fontSize: 11, fontWeight: "600", backgroundColor: "#e8ece4", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, overflow: "hidden" },

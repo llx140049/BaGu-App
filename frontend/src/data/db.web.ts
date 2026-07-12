@@ -47,6 +47,7 @@ function createInMemoryDb() {
         cat: question.cat,
         q: question.q,
         a: question.a,
+        source_document_id: question.source_document_id ?? null,
         level: progress.level ?? 0,
         correct: progress.correct ?? 0,
         incorrect: progress.incorrect ?? 0,
@@ -109,6 +110,18 @@ function createInMemoryDb() {
           source: row.source ?? "",
         }));
       }
+      if (sql.includes("SELECT id, cat, q, a, source, source_document_id, tags, created_at FROM questions")) {
+        return tables.questions.map((row) => ({
+          id: row.id,
+          cat: row.cat,
+          q: row.q,
+          a: row.a,
+          source: row.source ?? "",
+          source_document_id: row.source_document_id ?? null,
+          tags: row.tags ?? "[]",
+          created_at: row.created_at,
+        }));
+      }
       if (sql.includes("SELECT id, cat, q, a, source, tags, created_at FROM questions")) {
         return tables.questions.map((row) => ({
           id: row.id,
@@ -116,8 +129,17 @@ function createInMemoryDb() {
           q: row.q,
           a: row.a,
           source: row.source ?? "",
+          source_document_id: row.source_document_id ?? null,
           tags: row.tags ?? "[]",
           created_at: row.created_at,
+        }));
+      }
+      if (sql.includes("SELECT id, cat, q, source_document_id FROM questions")) {
+        return tables.questions.map((row) => ({
+          id: row.id,
+          cat: row.cat,
+          q: row.q,
+          source_document_id: row.source_document_id ?? null,
         }));
       }
       if (sql.includes("SELECT id, cat, q FROM questions")) {
@@ -207,8 +229,9 @@ function createInMemoryDb() {
           q: params[3],
           a: params[4],
           source: params[5] ?? "",
-          tags: params[6] ?? "[]",
-          created_at: params[7] ?? new Date().toISOString(),
+          source_document_id: params[6] ?? null,
+          tags: params[7] ?? "[]",
+          created_at: params[8] ?? new Date().toISOString(),
         });
       }
 

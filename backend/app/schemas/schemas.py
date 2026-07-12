@@ -1,7 +1,28 @@
-﻿from datetime import datetime, timezone
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
+
+# ─── Document ───
+class DocumentCreate(BaseModel):
+    title: str
+    content: str = ""
+    source: Optional[str] = ""
+    source_file_name: Optional[str] = ""
+
+
+class DocumentResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    title: str
+    content: str = ""
+    source: Optional[str] = ""
+    source_file_name: Optional[str] = ""
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
 
 
 # ─── Question ───
@@ -10,6 +31,8 @@ class QuestionCreate(BaseModel):
     q: str
     a: str
     source: Optional[str] = ""
+    source_document_id: Optional[UUID] = None
+    source_document_ids: List[UUID] = []
     tags: Optional[List[str]] = []
 
 
@@ -18,6 +41,8 @@ class QuestionUpdate(BaseModel):
     q: Optional[str] = None
     a: Optional[str] = None
     source: Optional[str] = None
+    source_document_id: Optional[UUID] = None
+    source_document_ids: Optional[List[UUID]] = None
     tags: Optional[List[str]] = None
 
 
@@ -28,6 +53,8 @@ class QuestionResponse(BaseModel):
     q: str
     a: str
     source: Optional[str] = ""
+    source_document_id: Optional[UUID] = None
+    source_document_ids: List[UUID] = []
     tags: Optional[List[str]] = []
     created_at: Optional[datetime] = None
 
@@ -36,11 +63,13 @@ class QuestionResponse(BaseModel):
 
 # ─── Upload ───
 class UploadPreview(BaseModel):
+    document_id: UUID
     file_name: str
     questions: List[QuestionCreate]
 
 
 class UploadConfirm(BaseModel):
+    document_id: UUID
     file_name: str
     file_type: str = "pdf"
     questions: List[QuestionCreate]

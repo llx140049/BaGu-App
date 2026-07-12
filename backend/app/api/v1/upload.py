@@ -83,12 +83,19 @@ async def upload_pdf(file: UploadFile = File(...)):
                 raise HTTPException(400, detail="无法从文件中提取到任何文本内容")
 
             questions = await generate_questions_from_text(text)
+            document_id = str(uuid.uuid4())
 
             validated = []
             for q in questions:
                 if not isinstance(q, dict) or "cat" not in q or "q" not in q or "a" not in q:
                     continue
-                item = {"cat": str(q["cat"]), "q": str(q["q"]), "a": str(q["a"])}
+                item = {
+                    "cat": str(q["cat"]),
+                    "q": str(q["q"]),
+                    "a": str(q["a"]),
+                    "source_document_id": document_id,
+                    "source_document_ids": [document_id],
+                }
                 item = _fix_qa_swap(item)
                 validated.append(item)
 
@@ -97,6 +104,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
             preview_token = str(uuid.uuid4())
             _preview_store[preview_token] = {
+                "document_id": document_id,
                 "file_name": filename,
                 "file_type": file_type,
                 "file_path": str(save_path),
@@ -109,6 +117,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
             return {
                 "preview_token": preview_token,
+                "document_id": document_id,
                 "file_name": filename,
                 "total": len(validated),
                 "categories": [
@@ -151,6 +160,7 @@ async def confirm_upload(body: dict):
 
     return {
         "imported": len(questions),
+        "document_id": preview["document_id"],
         "file_name": preview["file_name"],
         "questions": questions,
     }

@@ -4,6 +4,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { Platform } from "react-native";
 import { getDb } from "../../src/data/db";
+import { genId } from "../../src/data/utils";
 
 const API_BASE = Platform.OS === "web" ? "http://localhost:8001" : "http://192.168.2.11:8001";
 
@@ -58,7 +59,10 @@ export default function SettingsScreen() {
       setEmail("");
       setPassword("");
       setShowAuth(false);
-      try { localStorage?.setItem("bagu_sync_token", data.token);  } catch {}
+      try {
+        localStorage?.setItem("bagu_sync_token", data.token);
+        localStorage?.setItem("bagu_sync_email", data.email);
+      } catch {}
       
       Alert.alert(isRegister ? "注册成功" : "登录成功", `欢迎, ${data.email}`);
     } catch (e: any) {
@@ -82,9 +86,15 @@ export default function SettingsScreen() {
       
       // Push questions
       const allQuestions: any[] = await database.getAllAsync(
-        "SELECT id, cat, q, a, source, tags, created_at FROM questions"
+        "SELECT id, cat, q, a, source, source_document_id, tags, created_at FROM questions"
       );
-      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: [] }, token);
+      const allProgress: any[] = await database.getAllAsync(
+        "SELECT id, question_id, level, correct, incorrect, last_review, next_review, is_starred FROM card_progress"
+      );
+      const allDocuments: any[] = await database.getAllAsync(
+        "SELECT id, title, cat, content, source, created_at FROM documents"
+      );
+      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: allProgress, documents: allDocuments }, token);
       
       // Pull
       const data: any = await apiRequest("/api/v1/sync/pull", undefined, token);
@@ -97,15 +107,86 @@ export default function SettingsScreen() {
         );
         if (!existing) {
           await database.runAsync(
-            "INSERT OR IGNORE INTO questions (id, user_id, cat, q, a, source, tags, created_at) VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?)",
-            [q.id, q.cat, q.q, q.a, q.source || "", JSON.stringify(q.tags || []), q.created_at || new Date().toISOString()]
+            "INSERT OR IGNORE INTO questions (id, user_id, cat, q, a, source, source_document_id, tags, created_at) VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?, ?)",
+            [
+              q.id,
+              q.cat,
+              q.q,
+              q.a,
+              q.source || "",
+              q.source_document_id || null,
+              JSON.stringify(q.tags || []),
+              q.created_at || new Date().toISOString(),
+            ]
           );
           imported++;
         }
       }
+
+      let importedDocuments = 0;
+      for (const doc of data.documents ?? []) {
+        const existing = await database.getFirstAsync(
+          "SELECT id FROM documents WHERE id = ?",
+          [doc.id]
+        );
+        if (!existing) {
+          await database.runAsync(
+            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", doc.created_at || new Date().toISOString()]
+          );
+          importedDocuments++;
+        }
+      }
+
+      let mergedProgress = 0;
+      for (const progress of data.progress ?? []) {
+        const existing = await database.getFirstAsync(
+          "SELECT id FROM card_progress WHERE question_id = ?",
+          [progress.question_id]
+        );
+        if (existing?.id) {
+          await database.runAsync(
+            `UPDATE card_progress
+             SET level = ?, correct = ?, incorrect = ?, last_review = ?, next_review = ?, is_starred = ?
+             WHERE id = ?`,
+            [
+              progress.level ?? 0,
+              progress.correct ?? 0,
+              progress.incorrect ?? 0,
+              progress.last_review ?? null,
+              progress.next_review ?? null,
+              progress.is_starred ? 1 : 0,
+              existing.id,
+            ]
+          );
+        } else {
+          await database.runAsync(
+            `INSERT INTO card_progress (id, user_id, question_id, level, correct, incorrect, last_review, next_review, is_starred)
+             VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, question_id) DO UPDATE SET
+               level = excluded.level,
+               correct = excluded.correct,
+               incorrect = excluded.incorrect,
+               last_review = excluded.last_review,
+               next_review = excluded.next_review,
+               is_starred = excluded.is_starred`,
+            [
+              progress.id || genId(),
+              progress.question_id,
+              progress.level ?? 0,
+              progress.correct ?? 0,
+              progress.incorrect ?? 0,
+              progress.last_review ?? null,
+              progress.next_review ?? null,
+              progress.is_starred ? 1 : 0,
+            ]
+          );
+        }
+        mergedProgress++;
+      }
       
       setLastSync(new Date().toLocaleString());
-      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题, 下载 ${imported} 题`);
+      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题 / ${allProgress.length} 条进度 / ${allDocuments.length} 篇文档, 下载 ${imported} 题 / ${mergedProgress} 条进度 / ${importedDocuments} 篇文档`);
     } catch (e: any) {
       Alert.alert("同步失败", e.message || "请检查后端是否已启动");
     }

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { reviewCard } from "../data/sm2";
 
 export interface Card {
   id: string;
@@ -8,6 +9,7 @@ export interface Card {
   level: number;
   correct: number;
   incorrect: number;
+  lastReview?: string;
   nextReview?: string;
   isStarred: boolean;
 }
@@ -32,20 +34,21 @@ export const useCardStore = create<CardStore>((set, get) => ({
     set((s) => ({ cards: s.cards.map((c) => (c.id === id ? { ...c, ...updates } : c)) })),
   rateAndAdvance: (id, quality, total) =>
     set((s) => {
-      const now = Date.now();
       return {
         currentIndex: (s.currentIndex + 1) % total,
-        cards: s.cards.map((c) =>
-          c.id === id
-            ? {
-                ...c,
-                correct: quality === 1 ? c.correct + 1 : c.correct,
-                incorrect: quality === 0 ? c.incorrect + 1 : c.incorrect,
-                level: quality === 1 ? Math.min(c.level + 1, 7) : Math.max(c.level - 1, 0),
-                nextReview: new Date(now + (quality === 1 ? 86400000 : 3600000)).toISOString(),
-              }
-            : c
-        ),
+        cards: s.cards.map((c) => {
+          if (c.id !== id) return c;
+          const updatedReview = reviewCard(
+            {
+              level: c.level,
+              correct: c.correct,
+              incorrect: c.incorrect,
+              isStarred: c.isStarred,
+            },
+            quality
+          );
+          return { ...c, ...updatedReview };
+        }),
       };
     }),
   getDueCards: () =>

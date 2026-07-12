@@ -7,6 +7,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb, insertSampleData } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
+import { reviewCard } from "../../src/data/sm2";
 
 type Mode = "flashcard" | "systematic";
 
@@ -71,13 +72,16 @@ export default function StudyScreen() {
     const rows: any[] = await database.getAllAsync(
       `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level,
               COALESCE(cp.correct, 0) as correct, COALESCE(cp.incorrect, 0) as incorrect,
-              cp.is_starred as isStarred
+              cp.last_review as lastReview, cp.next_review as nextReview,
+              COALESCE(cp.is_starred, 0) as isStarred
        FROM questions q
        LEFT JOIN card_progress cp ON q.id = cp.question_id`
     );
     const mapped = rows.map((r: any) => ({
       id: r.id, cat: r.cat, q: r.q, a: r.a,
       level: r.level, correct: r.correct, incorrect: r.incorrect,
+      lastReview: r.lastReview ?? undefined,
+      nextReview: r.nextReview ?? undefined,
       isStarred: !!r.isStarred,
     }));
     for (const card of mapped) {
@@ -98,24 +102,65 @@ export default function StudyScreen() {
   const handleRate = useCallback((quality: number) => {
     if (ratingLock.current) return;
     ratingLock.current = true;
-    // 用 setTimeout 下一帧解锁，同时避免 rAF 在 RN 上可能的问题
-    setTimeout(() => { ratingLock.current = false; }, 100);
-    const store = useCardStore.getState();
-    if (store.cards.length === 0) return;
-    const idx = Math.min(store.currentIndex, store.cards.length - 1);
-    const c = store.cards[idx];
-    if (!c) return;
-    store.rateAndAdvance(c.id, quality, store.cards.length);
-    // Record study activity to local DB
-    getDb().then(async (db) => {
+    (async () => {
+      const store = useCardStore.getState();
+      if (store.cards.length === 0) return;
+      const idx = Math.min(store.currentIndex, store.cards.length - 1);
+      const c = store.cards[idx];
+      if (!c) return;
+
+      const updated = reviewCard(
+        {
+          level: c.level,
+          correct: c.correct,
+          incorrect: c.incorrect,
+          isStarred: c.isStarred,
+        },
+        quality
+      );
+
+      const db = await getDb();
+      await db.runAsync(
+        `INSERT INTO card_progress (id, user_id, question_id, level, correct, incorrect, last_review, next_review, is_starred)
+         VALUES (?, 'local', ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, question_id) DO UPDATE SET
+           level = excluded.level,
+           correct = excluded.correct,
+           incorrect = excluded.incorrect,
+           last_review = excluded.last_review,
+           next_review = excluded.next_review,
+           is_starred = excluded.is_starred`,
+        [
+          genId(),
+          c.id,
+          updated.level,
+          updated.correct,
+          updated.incorrect,
+          updated.lastReview,
+          updated.nextReview,
+          c.isStarred ? 1 : 0,
+        ]
+      );
+
       const today = new Date().toISOString().slice(0, 10);
-      const row = await db.getFirstAsync("SELECT id, count FROM study_records WHERE date = ?", [today]);
-      if (row) {
-        await db.runAsync("UPDATE study_records SET count = count + 1, correct = correct + ?, incorrect = incorrect + ? WHERE date = ?", [quality === 1 ? 1 : 0, quality === 0 ? 1 : 0, today]);
-      } else {
-        await db.runAsync("INSERT INTO study_records (id, user_id, date, count, correct, incorrect) VALUES (?, 'local', ?, 1, ?, ?)", [genId(), today, quality === 1 ? 1 : 0, quality === 0 ? 1 : 0]);
-      }
-    }).catch(() => {});
+      await db.runAsync(
+        `INSERT INTO study_records (id, user_id, date, count, correct, incorrect)
+         VALUES (?, 'local', ?, 1, ?, ?)
+         ON CONFLICT(user_id, date) DO UPDATE SET
+           count = study_records.count + 1,
+           correct = study_records.correct + excluded.correct,
+           incorrect = study_records.incorrect + excluded.incorrect`,
+        [genId(), today, quality === 1 ? 1 : 0, quality === 0 ? 1 : 0]
+      );
+
+      store.rateAndAdvance(c.id, quality, store.cards.length);
+    })()
+      .catch(() => {})
+      .finally(() => {
+        setTimeout(() => {
+          ratingLock.current = false;
+        }, 100);
+      });
   }, []);
 
   if (!selectedMode) {

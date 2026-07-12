@@ -4,6 +4,7 @@ import { useFocusEffect } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
+import { MASTERED_LEVEL } from "../../src/data/sm2";
 
 interface StatsData {
   total: number;
@@ -38,20 +39,21 @@ export default function StatsScreen() {
 
       const today = new Date().toISOString().slice(0, 10);
       const todayRow: any = await db.getFirstAsync(
-        "SELECT COUNT(*) as cnt FROM study_records WHERE date = ?", [today]
+        "SELECT COALESCE(SUM(count), 0) as cnt FROM study_records WHERE date = ?", [today]
       );
       const studiedToday = todayRow?.cnt ?? 0;
 
-      // Mastered = level >= 5
+      // Mastered = level >= MASTERED_LEVEL
       const masteredRow: any = await db.getFirstAsync(
-        "SELECT COUNT(*) as cnt FROM card_progress WHERE level >= 5"
+        "SELECT COUNT(*) as cnt FROM card_progress WHERE level >= ?",
+        [MASTERED_LEVEL]
       );
       const mastered = masteredRow?.cnt ?? 0;
 
       const needRow: any = await db.getFirstAsync(
         `SELECT COUNT(*) as cnt FROM card_progress 
-         WHERE (next_review IS NULL OR next_review <= ?) AND level < 5`,
-        [new Date().toISOString()]
+         WHERE (next_review IS NULL OR next_review <= ?) AND level < ?`,
+        [new Date().toISOString(), MASTERED_LEVEL]
       );
       const needReview = needRow?.cnt ?? 0;
 
@@ -69,7 +71,7 @@ export default function StatsScreen() {
       // Categories
       const catRows: any[] = await db.getAllAsync(
         `SELECT q.cat, COUNT(*) as total, 
-                COALESCE(SUM(CASE WHEN cp.level >= 5 THEN 1 ELSE 0 END), 0) as mastered
+                COALESCE(SUM(CASE WHEN cp.level >= ${MASTERED_LEVEL} THEN 1 ELSE 0 END), 0) as mastered
          FROM questions q
          LEFT JOIN card_progress cp ON q.id = cp.question_id
          GROUP BY q.cat`
@@ -197,7 +199,7 @@ export default function StatsScreen() {
               <View style={[styles.progressFill, {
                 width: `${(l.count / maxLevelCount) * 100}%`,
                 height: 14,
-                backgroundColor: l.level >= 5 ? colors.success : l.level >= 3 ? colors.primary : colors.warning,
+                backgroundColor: l.level >= MASTERED_LEVEL ? colors.success : l.level >= 3 ? colors.primary : colors.warning,
               }]} />
             </View>
             <Text style={{ width: 28, textAlign: "right", fontSize: 11, color: colors.textSecondary }}>{l.count}</Text>

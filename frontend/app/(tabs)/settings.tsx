@@ -4,6 +4,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { Platform } from "react-native";
 import { getDb } from "../../src/data/db";
+import { genId } from "../../src/data/utils";
 
 const API_BASE = Platform.OS === "web" ? "http://localhost:8001" : "http://192.168.2.11:8001";
 
@@ -58,7 +59,10 @@ export default function SettingsScreen() {
       setEmail("");
       setPassword("");
       setShowAuth(false);
-      try { localStorage?.setItem("bagu_sync_token", data.token);  } catch {}
+      try {
+        localStorage?.setItem("bagu_sync_token", data.token);
+        localStorage?.setItem("bagu_sync_email", data.email);
+      } catch {}
       
       Alert.alert(isRegister ? "注册成功" : "登录成功", `欢迎, ${data.email}`);
     } catch (e: any) {
@@ -84,7 +88,10 @@ export default function SettingsScreen() {
       const allQuestions: any[] = await database.getAllAsync(
         "SELECT id, cat, q, a, source, tags, created_at FROM questions"
       );
-      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: [] }, token);
+      const allProgress: any[] = await database.getAllAsync(
+        "SELECT id, question_id, level, correct, incorrect, last_review, next_review, is_starred FROM card_progress"
+      );
+      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: allProgress }, token);
       
       // Pull
       const data: any = await apiRequest("/api/v1/sync/pull", undefined, token);
@@ -103,9 +110,56 @@ export default function SettingsScreen() {
           imported++;
         }
       }
+
+      let mergedProgress = 0;
+      for (const progress of data.progress ?? []) {
+        const existing = await database.getFirstAsync(
+          "SELECT id FROM card_progress WHERE question_id = ?",
+          [progress.question_id]
+        );
+        if (existing?.id) {
+          await database.runAsync(
+            `UPDATE card_progress
+             SET level = ?, correct = ?, incorrect = ?, last_review = ?, next_review = ?, is_starred = ?
+             WHERE id = ?`,
+            [
+              progress.level ?? 0,
+              progress.correct ?? 0,
+              progress.incorrect ?? 0,
+              progress.last_review ?? null,
+              progress.next_review ?? null,
+              progress.is_starred ? 1 : 0,
+              existing.id,
+            ]
+          );
+        } else {
+          await database.runAsync(
+            `INSERT INTO card_progress (id, user_id, question_id, level, correct, incorrect, last_review, next_review, is_starred)
+             VALUES (?, 'cloud', ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, question_id) DO UPDATE SET
+               level = excluded.level,
+               correct = excluded.correct,
+               incorrect = excluded.incorrect,
+               last_review = excluded.last_review,
+               next_review = excluded.next_review,
+               is_starred = excluded.is_starred`,
+            [
+              progress.id || genId(),
+              progress.question_id,
+              progress.level ?? 0,
+              progress.correct ?? 0,
+              progress.incorrect ?? 0,
+              progress.last_review ?? null,
+              progress.next_review ?? null,
+              progress.is_starred ? 1 : 0,
+            ]
+          );
+        }
+        mergedProgress++;
+      }
       
       setLastSync(new Date().toLocaleString());
-      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题, 下载 ${imported} 题`);
+      Alert.alert("同步完成", `已上传 ${allQuestions.length} 题 / ${allProgress.length} 条进度, 下载 ${imported} 题 / ${mergedProgress} 条进度`);
     } catch (e: any) {
       Alert.alert("同步失败", e.message || "请检查后端是否已启动");
     }

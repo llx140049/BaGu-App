@@ -5,6 +5,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { useCardStore } from "../../src/store/useCardStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb, insertSampleData } from "../../src/data/db";
+import { isCardDue, MASTERED_LEVEL } from "../../src/data/sm2";
 
 interface DbRow {
   id: string;
@@ -12,6 +13,10 @@ interface DbRow {
   q: string;
   a: string;
   level: number;
+  correct: number;
+  incorrect: number;
+  nextReview?: string | null;
+  isStarred?: number;
 }
 
 export default function HomeScreen() {
@@ -28,7 +33,11 @@ export default function HomeScreen() {
       await insertSampleData();
       const database = await getDb();
       const rows: DbRow[] = await database.getAllAsync(
-        `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level
+        `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level,
+                COALESCE(cp.correct, 0) as correct,
+                COALESCE(cp.incorrect, 0) as incorrect,
+                cp.next_review as nextReview,
+                COALESCE(cp.is_starred, 0) as isStarred
          FROM questions q
          LEFT JOIN card_progress cp ON q.id = cp.question_id`
       );
@@ -38,12 +47,13 @@ export default function HomeScreen() {
         q: r.q,
         a: r.a,
         level: r.level,
-        correct: 0,
-        incorrect: 0,
-        isStarred: false,
+        correct: r.correct,
+        incorrect: r.incorrect,
+        nextReview: r.nextReview ?? undefined,
+        isStarred: !!r.isStarred,
       }));
       setCards(mapped);
-      setDueCount(mapped.filter((c) => c.level < 2).length);
+      setDueCount(mapped.filter((c) => isCardDue(c.nextReview)).length);
       setTodayCount(mapped.length);
     })();
   }, []);
@@ -63,7 +73,7 @@ export default function HomeScreen() {
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>待复习</Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: surface }]}>
-          <Text style={[styles.statNumber, { color: colors.success }]}>{cards.filter((c) => c.level >= 3).length}</Text>
+          <Text style={[styles.statNumber, { color: colors.success }]}>{cards.filter((c) => c.level >= MASTERED_LEVEL).length}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>已掌握</Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: surface }]}>
@@ -76,7 +86,7 @@ export default function HomeScreen() {
       <Text style={[styles.sectionTitle, { color: c }]}>分类进度</Text>
       {["JavaScript", "React", "CSS", "网络"].map((cat) => {
         const catCards = cards.filter((c) => c.cat === cat);
-        const learned = catCards.filter((c: any) => c.level >= 3).length;
+        const learned = catCards.filter((c: any) => c.level >= MASTERED_LEVEL).length;
         const total = catCards.length;
         return (
           <TouchableOpacity

@@ -149,6 +149,9 @@ function createInMemoryDb() {
           source_document_id: row.source_document_id ?? null,
         }));
       }
+      if (sql.includes("SELECT id, cat, q, a, source_document_id FROM questions")) {
+        return tables.questions.map((row) => ({ id: row.id, cat: row.cat, q: row.q, a: row.a, source_document_id: row.source_document_id ?? null }));
+      }
       if (sql.includes("SELECT id, cat, q FROM questions")) {
         return tables.questions.map((row) => ({
           id: row.id,
@@ -229,16 +232,15 @@ function createInMemoryDb() {
       const upper = sql.toUpperCase();
 
       if (upper.includes("INSERT INTO QUESTIONS") && params) {
+        const literalUserId = sql.match(/VALUES\s*\(\?\s*,\s*'([^']+)'\s*,/i)?.[1];
+        const usesLiteralUserId = Boolean(literalUserId);
+        const valueOffset = usesLiteralUserId ? 1 : 2;
         tables.questions.push({
           id: params[0],
-          user_id: params[1],
-          cat: params[2],
-          q: params[3],
-          a: params[4],
-          source: params[5] ?? "",
-          source_document_id: params[6] ?? null,
-          tags: params[7] ?? "[]",
-          created_at: params[8] ?? new Date().toISOString(),
+          user_id: literalUserId ?? params[1],
+          cat: params[valueOffset], q: params[valueOffset + 1], a: params[valueOffset + 2],
+          source: params[valueOffset + 3] ?? "", source_document_id: params[valueOffset + 4] ?? null,
+          tags: params[valueOffset + 5] ?? "[]", created_at: params[valueOffset + 6] ?? new Date().toISOString(),
         });
       }
 
@@ -287,15 +289,35 @@ function createInMemoryDb() {
         }
       }
 
+      if (upper.includes("UPDATE QUESTIONS SET CAT = ?, Q = ?, A = ? WHERE ID = ?") && params) {
+        const question = findQuestionById(params[3]);
+        if (question) { question.cat = params[0]; question.q = params[1]; question.a = params[2]; }
+      }
+
       if (upper.includes("UPDATE QUESTIONS SET SOURCE_DOCUMENT_ID = NULL WHERE SOURCE_DOCUMENT_ID = ?") && params) {
         for (const question of tables.questions) {
           if (question.source_document_id === params[0]) question.source_document_id = null;
         }
       }
 
+      if (upper.includes("UPDATE DOCUMENTS SET TITLE = ? WHERE ID = ?") && params) {
+        const document = tables.documents.find((row) => row.id === params[1]);
+        if (document) document.title = params[0];
+      }
+
       if (upper.includes("DELETE FROM DOCUMENTS WHERE ID = ?") && params) {
         const index = tables.documents.findIndex((row) => row.id === params[0]);
         if (index >= 0) tables.documents.splice(index, 1);
+      }
+
+      if (upper.includes("DELETE FROM CARD_PROGRESS WHERE QUESTION_ID = ?") && params) {
+        const index = tables.card_progress.findIndex((row) => row.question_id === params[0]);
+        if (index >= 0) tables.card_progress.splice(index, 1);
+      }
+
+      if (upper.includes("DELETE FROM QUESTIONS WHERE ID = ?") && params) {
+        const index = tables.questions.findIndex((row) => row.id === params[0]);
+        if (index >= 0) tables.questions.splice(index, 1);
       }
 
       if (upper.includes("UPDATE CARD_PROGRESS SET") && params) {

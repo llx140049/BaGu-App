@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb, insertSampleData } from "../../src/data/db";
@@ -8,10 +8,12 @@ import { genId } from "../../src/data/utils";
 import { uploadApi } from "../../src/services/api";
 import FilePicker from "../../src/components/FilePicker";
 import UploadPreviewModal from "../../src/components/UploadPreview";
+import QuestionEditor, { EditableQuestion } from "../../src/components/QuestionEditor";
 
 interface DocItem { id: string; title: string; cat: string; source: string; questionCount: number; }
-interface QItem { id: string; cat: string; q: string; source_document_id?: string | null; }
+interface QItem extends EditableQuestion { id: string; source_document_id?: string | null; }
 type Tab = "questions" | "knowledge";
+type SourceFilter = "all" | "document" | "standalone";
 
 export default function QuestionsScreen() {
   const router = useRouter();
@@ -29,11 +31,14 @@ export default function QuestionsScreen() {
   const [uploading, setUploading] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [editingQuestion, setEditingQuestion] = useState<QItem | null>(null);
+  const [showQuestionEditor, setShowQuestionEditor] = useState(false);
 
   const loadData = useCallback(async () => {
     await insertSampleData();
     const database = await getDb();
-    const qRows: QItem[] = await database.getAllAsync("SELECT id, cat, q, source_document_id FROM questions ORDER BY cat");
+    const qRows: QItem[] = await database.getAllAsync("SELECT id, cat, q, a, source_document_id FROM questions ORDER BY cat");
     setQuestions(qRows);
     const docRows: Omit<DocItem, "questionCount">[] = await database.getAllAsync("SELECT id, title, cat, source FROM documents ORDER BY created_at");
     const questionCounts = new Map<string, number>();
@@ -45,7 +50,7 @@ export default function QuestionsScreen() {
     setDocs(docRows.map((doc) => ({ ...doc, questionCount: questionCounts.get(doc.id) ?? 0 })));
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const handleFileSelected = async (file: { uri: string; name: string; bytes: ArrayBuffer }) => {
     setUploading(true);
@@ -105,6 +110,41 @@ export default function QuestionsScreen() {
     }
   };
 
+  const saveQuestion = async (draft: EditableQuestion) => {
+    const database = await getDb();
+    if (draft.id) {
+      await database.runAsync("UPDATE questions SET cat = ?, q = ?, a = ? WHERE id = ?", [draft.cat, draft.q, draft.a, draft.id]);
+    } else {
+      const id = genId();
+      await database.runAsync("INSERT INTO questions (id, user_id, cat, q, a, source_document_id) VALUES (?, ?, ?, ?, ?, NULL)", [id, "local", draft.cat, draft.q, draft.a]);
+      await database.runAsync("INSERT INTO card_progress (id, user_id, question_id, level) VALUES (?, 'local', ?, 0)", [genId(), id]);
+    }
+    setShowQuestionEditor(false);
+    setEditingQuestion(null);
+    await loadData();
+  };
+
+  const deleteQuestion = async () => {
+    if (!editingQuestion?.id) return;
+    Alert.alert("删除题目？", "该题目的学习进度也会一并删除。", [
+      { text: "取消", style: "cancel" },
+      { text: "删除", style: "destructive", onPress: async () => {
+        const database = await getDb();
+        await database.runAsync("DELETE FROM card_progress WHERE question_id = ?", [editingQuestion.id]);
+        await database.runAsync("DELETE FROM questions WHERE id = ?", [editingQuestion.id]);
+        setShowQuestionEditor(false);
+        setEditingQuestion(null);
+        await loadData();
+      } },
+    ]);
+  };
+
+  const filteredQuestions = questions.filter((question) => {
+    if (sourceFilter === "document") return Boolean(question.source_document_id);
+    if (sourceFilter === "standalone") return !question.source_document_id;
+    return true;
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Text style={[styles.title, { color: c }]}>题库</Text>
@@ -124,6 +164,19 @@ export default function QuestionsScreen() {
         </TouchableOpacity>
       </View>
 
+      {activeTab === "questions" ? (
+        <View style={styles.questionToolbar}>
+          <View style={styles.filterRow}>
+            {(["all", "document", "standalone"] as SourceFilter[]).map((filter) => (
+              <TouchableOpacity key={filter} style={[styles.filterButton, sourceFilter === filter && { backgroundColor: colors.primary }]} onPress={() => setSourceFilter(filter)}>
+                <Text style={[styles.filterText, { color: sourceFilter === filter ? "#fff" : c }]}>{filter === "all" ? "全部" : filter === "document" ? "文档题" : "独立题"}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.primary }]} onPress={() => { setEditingQuestion(null); setShowQuestionEditor(true); }}><Text style={styles.addButtonText}>+ 新增</Text></TouchableOpacity>
+        </View>
+      ) : null}
+
       {uploading ? (
         <View style={[styles.uploadingCard, { backgroundColor: surface }]}>
           <ActivityIndicator color={colors.primary} size="small" />
@@ -139,20 +192,20 @@ export default function QuestionsScreen() {
 
       <ScrollView style={styles.listArea}>
         {activeTab === "questions" ? (
-          questions.length === 0 ? (
+          filteredQuestions.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: surface }]}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无题目</Text>
               <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>点击上方按钮上传 PDF 或 Markdown</Text>
             </View>
           ) : (
-            questions.map((q) => (
-              <View key={q.id} style={[styles.qCard, { backgroundColor: surface }]}>
+            filteredQuestions.map((q) => (
+              <TouchableOpacity key={q.id} style={[styles.qCard, { backgroundColor: surface }]} activeOpacity={0.8} onPress={() => { setEditingQuestion(q); setShowQuestionEditor(true); }}>
                 <Text style={[styles.qCat, { color: colors.primary }]}>{q.cat}</Text>
                 <Text style={[styles.qText, { color: c }]} numberOfLines={2}>{q.q}</Text>
                 {q.source_document_id ? (
                   <Text style={[styles.qSource, { color: colors.textTertiary }]}>来源：文档</Text>
                 ) : null}
-              </View>
+              </TouchableOpacity>
             ))
           )
         ) : docs.length === 0 ? (
@@ -187,6 +240,7 @@ export default function QuestionsScreen() {
         onConfirm={handleConfirm}
         uploading={false}
       />
+      <QuestionEditor visible={showQuestionEditor} question={editingQuestion} onClose={() => { setShowQuestionEditor(false); setEditingQuestion(null); }} onSave={saveQuestion} onDelete={editingQuestion ? deleteQuestion : undefined} />
     </View>
   );
 }
@@ -197,6 +251,12 @@ const styles = StyleSheet.create({
   segmentRow: { flexDirection: "row", borderRadius: 10, padding: 3, marginBottom: 12 },
   segment: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
   segmentText: { fontSize: 14, fontWeight: "600" },
+  questionToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  filterRow: { flexDirection: "row", gap: 6 },
+  filterButton: { borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
+  filterText: { fontSize: 12, fontWeight: "600" },
+  addButton: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  addButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   uploadingCard: { borderRadius: 10, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 12 },
   uploadingText: { fontSize: 13 },
   listArea: { flex: 1, marginTop: 8 },

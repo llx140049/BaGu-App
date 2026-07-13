@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal, TextInput } from "react-native";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
@@ -106,6 +106,8 @@ export default function DocReaderScreen() {
 
   const [doc, setDoc] = useState<DocData | null>(null);
   const [questionCount, setQuestionCount] = useState(0);
+  const [showRename, setShowRename] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -126,6 +128,21 @@ export default function DocReaderScreen() {
   const startPractice = () => {
     if (!doc || questionCount === 0) return;
     router.push({ pathname: "/(tabs)/study", params: { documentId: doc.id, documentTitle: doc.title } });
+  };
+
+  const openRename = () => {
+    if (!doc) return;
+    setDraftTitle(doc.title);
+    setShowRename(true);
+  };
+
+  const saveRename = async () => {
+    const title = draftTitle.trim();
+    if (!doc || !title) return;
+    const database = await getDb();
+    await database.runAsync("UPDATE documents SET title = ? WHERE id = ?", [title, doc.id]);
+    setDoc({ ...doc, title });
+    setShowRename(false);
   };
 
   const deleteDocument = () => {
@@ -171,6 +188,7 @@ export default function DocReaderScreen() {
 
       <ScrollView style={s.scrollArea} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={true}>
         <Text style={[s.docTitle, { color: c }]}>{doc.title}</Text>
+        <TouchableOpacity style={s.renameButton} onPress={openRename}><Text style={s.renameText}>重命名</Text></TouchableOpacity>
         <View style={[s.practiceCard, { backgroundColor: surface }]}>
           <View>
             <Text style={[s.practiceTitle, { color: c }]}>关联题目</Text>
@@ -190,6 +208,18 @@ export default function DocReaderScreen() {
         </TouchableOpacity>
         <View style={{ height: 48 }} />
       </ScrollView>
+      <Modal visible={showRename} transparent animationType="fade" onRequestClose={() => setShowRename(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.renameModal, { backgroundColor: surface }]}>
+            <Text style={[s.modalTitle, { color: c }]}>重命名文档</Text>
+            <TextInput style={[s.renameInput, { color: c, borderColor: isDark ? colors.borderDark : colors.border }]} value={draftTitle} onChangeText={setDraftTitle} autoFocus placeholder="输入文档标题" placeholderTextColor={colors.textTertiary} />
+            <View style={s.modalActions}>
+              <TouchableOpacity style={s.modalButton} onPress={() => setShowRename(false)}><Text style={[s.cancelText, { color: colors.textSecondary }]}>取消</Text></TouchableOpacity>
+              <TouchableOpacity style={[s.modalButton, s.saveButton]} onPress={saveRename}><Text style={s.saveText}>保存</Text></TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -204,6 +234,8 @@ const s = StyleSheet.create({
   scrollArea: { flex: 1 },
   scrollContent: { padding: 20 },
   docTitle: { fontSize: 24, fontWeight: "700", marginBottom: 20, lineHeight: 32 },
+  renameButton: { alignSelf: "flex-start", marginTop: -12, marginBottom: 16 },
+  renameText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
   practiceCard: { borderRadius: 12, padding: 14, marginBottom: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   practiceTitle: { fontSize: 15, fontWeight: "600" },
   practiceMeta: { fontSize: 12, marginTop: 4 },
@@ -211,6 +243,15 @@ const s = StyleSheet.create({
   practiceButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   deleteButton: { marginTop: 20, alignItems: "center", paddingVertical: 12 },
   deleteText: { color: colors.danger, fontSize: 14 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 24 },
+  renameModal: { borderRadius: 14, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 16 },
+  renameInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 18 },
+  modalButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
+  saveButton: { backgroundColor: colors.primary },
+  cancelText: { fontSize: 14, fontWeight: "600" },
+  saveText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   h1: { fontSize: 20, fontWeight: "700", marginTop: 20, marginBottom: 10 },
   h2: { fontSize: 17, fontWeight: "600", marginTop: 18, marginBottom: 8 },
   h3: { fontSize: 15, fontWeight: "600", marginTop: 14, marginBottom: 6 },

@@ -2,11 +2,9 @@ import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator } from "react-native";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
-import { Platform } from "react-native";
 import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
-
-const API_BASE = Platform.OS === "web" ? "http://localhost:8001" : "http://192.168.2.11:8001";
+import { API_BASE } from "../../src/services/api";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };

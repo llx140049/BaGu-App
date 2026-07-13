@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 
-// On phone (Expo Go), use LAN IP; on web (browser), use localhost
+// On phone (Expo Go), use the computer's LAN IP; on web (browser), use localhost.
 const HOST = Platform.OS === "web" ? "localhost" : "192.168.2.11";
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? `http://${HOST}:8001`;
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? `http://${HOST}:8000`;
 
 async function request<T>(
   path: string,

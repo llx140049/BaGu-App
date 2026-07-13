@@ -245,16 +245,15 @@ function createInMemoryDb() {
       }
 
       if (upper.includes("INSERT INTO CARD_PROGRESS") && params) {
+        const literalUserId = sql.match(/VALUES\s*\(\?\s*,\s*'([^']+)'\s*,/i)?.[1];
+        const valueOffset = literalUserId ? 1 : 2;
         upsertProgress({
           id: params[0],
-          user_id: params[1],
-          question_id: params[2],
-          level: params[3] ?? 0,
-          correct: params[4] ?? 0,
-          incorrect: params[5] ?? 0,
-          last_review: params[6] ?? null,
-          next_review: params[7] ?? null,
-          is_starred: params[8] ?? 0,
+          user_id: literalUserId ?? params[1],
+          question_id: params[valueOffset], level: params[valueOffset + 1] ?? 0,
+          correct: params[valueOffset + 2] ?? 0, incorrect: params[valueOffset + 3] ?? 0,
+          last_review: params[valueOffset + 4] ?? null, next_review: params[valueOffset + 5] ?? null,
+          is_starred: params[valueOffset + 6] ?? 0,
         });
       }
 

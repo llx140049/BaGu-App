@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Pressable } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { useCardStore, Card } from "../../src/store/useCardStore";
 import { useThemeStore } from "../../src/store/useThemeStore";
@@ -58,24 +58,36 @@ function FlashCardView({ card, onRate }: { card: Card; onRate: (quality: number)
 
 export default function StudyScreen() {
   const router = useRouter();
+  const { documentId, documentTitle } = useLocalSearchParams<{ documentId?: string; documentTitle?: string }>();
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
   const { cards, currentIndex, setCards, setCurrentIndex, rateAndAdvance } = useCardStore();
   const [selectedMode, setSelectedMode] = useState<Mode | null>(null);
   const [loading, setLoading] = useState(true);
   const ratingLock = useRef(false);
+  const isDocumentStudy = Boolean(documentId);
 
   const loadCards = useCallback(async () => {
     setLoading(true);
     await insertSampleData();
     const database = await getDb();
-    const rows: any[] = await database.getAllAsync(
-      `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level,
+    const query = documentId
+      ? `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level,
               COALESCE(cp.correct, 0) as correct, COALESCE(cp.incorrect, 0) as incorrect,
               cp.last_review as lastReview, cp.next_review as nextReview,
               COALESCE(cp.is_starred, 0) as isStarred
        FROM questions q
-       LEFT JOIN card_progress cp ON q.id = cp.question_id`
+       LEFT JOIN card_progress cp ON q.id = cp.question_id
+       WHERE q.source_document_id = ?`
+      : `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) as level,
+              COALESCE(cp.correct, 0) as correct, COALESCE(cp.incorrect, 0) as incorrect,
+              cp.last_review as lastReview, cp.next_review as nextReview,
+              COALESCE(cp.is_starred, 0) as isStarred
+       FROM questions q
+       LEFT JOIN card_progress cp ON q.id = cp.question_id`;
+    const rows: any[] = await database.getAllAsync(
+      query,
+      documentId ? [documentId] : undefined
     );
     const mapped = rows.map((r: any) => ({
       id: r.id, cat: r.cat, q: r.q, a: r.a,
@@ -92,9 +104,16 @@ export default function StudyScreen() {
     }
     setCards(mapped);
     setLoading(false);
-  }, []);
+  }, [documentId]);
 
   useFocusEffect(useCallback(() => { loadCards(); }, [loadCards]));
+
+  useEffect(() => {
+    if (documentId) {
+      setSelectedMode("flashcard");
+      setCurrentIndex(0);
+    }
+  }, [documentId, setCurrentIndex]);
 
   const currentCard = cards.length > 0 ? cards[Math.min(currentIndex, cards.length - 1)] : null;
   const bg = isDark ? colors.bgDark : colors.bg;
@@ -184,7 +203,9 @@ export default function StudyScreen() {
   if (!currentCard) {
     return (
       <View style={[styles.container, { backgroundColor: bg }]}>
-        <Text style={[styles.title, { color: isDark ? colors.textDark : colors.text }]}>暂无题目</Text>
+        <Text style={[styles.title, { color: isDark ? colors.textDark : colors.text }]}>
+          {isDocumentStudy ? "该文档暂无关联题目" : "暂无题目"}
+        </Text>
         <TouchableOpacity style={[styles.modeBtn, { backgroundColor: colors.primary }]} onPress={() => setSelectedMode(null)}>
           <Text style={styles.modeBtnText}>返回</Text>
         </TouchableOpacity>
@@ -194,6 +215,7 @@ export default function StudyScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
+      {isDocumentStudy ? <Text style={[styles.documentTitle, { color: colors.textSecondary }]} numberOfLines={1}>{documentTitle}</Text> : null}
       <Text style={[styles.progress, { color: colors.textSecondary }]}>{currentIndex + 1} / {cards.length}</Text>
       <FlashCardView key={currentIndex} card={currentCard} onRate={handleRate} />
     </View>
@@ -209,6 +231,7 @@ const styles = StyleSheet.create({
   modeDesc: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 4 },
   modeDesc2: { fontSize: 12, marginTop: 4 },
   progress: { fontSize: 14, textAlign: "center", marginVertical: 8 },
+  documentTitle: { fontSize: 13, textAlign: "center", marginTop: 8 },
   card: { borderRadius: 16, padding: 28, minHeight: 260, justifyContent: "center", alignItems: "center", marginBottom: 20 },
   catBadge: { fontSize: 12, fontWeight: "600", marginBottom: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: "hidden", backgroundColor: "#e8ece4" },
   cardText: { fontSize: 18, lineHeight: 26, textAlign: "center" },

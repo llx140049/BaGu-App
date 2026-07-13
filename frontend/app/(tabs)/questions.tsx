@@ -9,7 +9,7 @@ import { uploadApi } from "../../src/services/api";
 import FilePicker from "../../src/components/FilePicker";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 
-interface DocItem { id: string; title: string; cat: string; source: string; }
+interface DocItem { id: string; title: string; cat: string; source: string; questionCount: number; }
 interface QItem { id: string; cat: string; q: string; source_document_id?: string | null; }
 type Tab = "questions" | "knowledge";
 
@@ -33,10 +33,16 @@ export default function QuestionsScreen() {
   const loadData = useCallback(async () => {
     await insertSampleData();
     const database = await getDb();
-    const docRows: DocItem[] = await database.getAllAsync("SELECT id, title, cat, source FROM documents ORDER BY created_at");
-    setDocs(docRows);
     const qRows: QItem[] = await database.getAllAsync("SELECT id, cat, q, source_document_id FROM questions ORDER BY cat");
     setQuestions(qRows);
+    const docRows: Omit<DocItem, "questionCount">[] = await database.getAllAsync("SELECT id, title, cat, source FROM documents ORDER BY created_at");
+    const questionCounts = new Map<string, number>();
+    for (const question of qRows) {
+      if (question.source_document_id) {
+        questionCounts.set(question.source_document_id, (questionCounts.get(question.source_document_id) ?? 0) + 1);
+      }
+    }
+    setDocs(docRows.map((doc) => ({ ...doc, questionCount: questionCounts.get(doc.id) ?? 0 })));
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -166,6 +172,7 @@ export default function QuestionsScreen() {
                 <Text style={[styles.docSource, { color: colors.textTertiary }]}>{doc.source}</Text>
               </View>
               <Text style={[styles.docTitle, { color: c }]}>{doc.title}</Text>
+              <Text style={[styles.docMeta, { color: colors.textTertiary }]}>{doc.questionCount} 道关联题目</Text>
               <Text style={[styles.docArrow, { color: colors.primary }]}>阅读全文 →</Text>
             </TouchableOpacity>
           ))
@@ -205,5 +212,6 @@ const styles = StyleSheet.create({
   docCat: { fontSize: 11, fontWeight: "600", backgroundColor: "#e8ece4", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, overflow: "hidden" },
   docSource: { fontSize: 11 },
   docTitle: { fontSize: 16, fontWeight: "600", lineHeight: 22, marginBottom: 8 },
+  docMeta: { fontSize: 12, marginBottom: 8 },
   docArrow: { fontSize: 13, fontWeight: "500" },
 });

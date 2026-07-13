@@ -87,7 +87,11 @@ function createInMemoryDb() {
     execAsync: async (_sql: string) => {},
     getAllAsync: async (sql: string, params?: any[]): Promise<any[]> => {
       if (sql.includes("LEFT JOIN card_progress cp ON q.id = cp.question_id")) {
-        return joinQuestionsAndProgress();
+        const rows = joinQuestionsAndProgress();
+        if (sql.includes("WHERE q.source_document_id = ?")) {
+          return rows.filter((row) => row.source_document_id === params?.[0]);
+        }
+        return rows;
       }
       if (sql.includes("FROM questions q") && sql.includes("GROUP BY q.cat")) {
         return groupByCategory();
@@ -98,6 +102,9 @@ function createInMemoryDb() {
       if (sql.includes("FROM documents WHERE id = ?")) {
         const id = params?.[0];
         return tables.documents.filter((row) => row.id === id);
+      }
+      if (sql.includes("FROM questions WHERE source_document_id = ?")) {
+        return tables.questions.filter((row) => row.source_document_id === params?.[0]);
       }
       if (sql.includes("FROM documents")) {
         return tables.documents.slice();
@@ -278,6 +285,17 @@ function createInMemoryDb() {
           question.q = params[0];
           question.a = params[1];
         }
+      }
+
+      if (upper.includes("UPDATE QUESTIONS SET SOURCE_DOCUMENT_ID = NULL WHERE SOURCE_DOCUMENT_ID = ?") && params) {
+        for (const question of tables.questions) {
+          if (question.source_document_id === params[0]) question.source_document_id = null;
+        }
+      }
+
+      if (upper.includes("DELETE FROM DOCUMENTS WHERE ID = ?") && params) {
+        const index = tables.documents.findIndex((row) => row.id === params[0]);
+        if (index >= 0) tables.documents.splice(index, 1);
       }
 
       if (upper.includes("UPDATE CARD_PROGRESS SET") && params) {

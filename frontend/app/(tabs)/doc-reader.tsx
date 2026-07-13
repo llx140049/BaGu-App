@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
@@ -105,6 +105,7 @@ export default function DocReaderScreen() {
   const c = isDark ? colors.textDark : colors.text;
 
   const [doc, setDoc] = useState<DocData | null>(null);
+  const [questionCount, setQuestionCount] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -114,8 +115,39 @@ export default function DocReaderScreen() {
         [id]
       );
       if (rows.length > 0) setDoc(rows[0]);
+      const questions = await database.getAllAsync(
+        "SELECT id FROM questions WHERE source_document_id = ?",
+        [id]
+      );
+      setQuestionCount(questions.length);
     })();
   }, [id]);
+
+  const startPractice = () => {
+    if (!doc || questionCount === 0) return;
+    router.push({ pathname: "/(tabs)/study", params: { documentId: doc.id, documentTitle: doc.title } });
+  };
+
+  const deleteDocument = () => {
+    if (!doc) return;
+    Alert.alert(
+      "删除文档？",
+      "关联题目会保留为独立题目，原文档将无法恢复。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: async () => {
+            const database = await getDb();
+            await database.runAsync("UPDATE questions SET source_document_id = NULL WHERE source_document_id = ?", [doc.id]);
+            await database.runAsync("DELETE FROM documents WHERE id = ?", [doc.id]);
+            router.back();
+          },
+        },
+      ]
+    );
+  };
 
   if (!doc) {
     return (
@@ -139,7 +171,23 @@ export default function DocReaderScreen() {
 
       <ScrollView style={s.scrollArea} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={true}>
         <Text style={[s.docTitle, { color: c }]}>{doc.title}</Text>
+        <View style={[s.practiceCard, { backgroundColor: surface }]}>
+          <View>
+            <Text style={[s.practiceTitle, { color: c }]}>关联题目</Text>
+            <Text style={[s.practiceMeta, { color: colors.textSecondary }]}>{questionCount} 道题目</Text>
+          </View>
+          <TouchableOpacity
+            style={[s.practiceButton, { backgroundColor: questionCount > 0 ? colors.primary : colors.border }]}
+            disabled={questionCount === 0}
+            onPress={startPractice}
+          >
+            <Text style={s.practiceButtonText}>开始练习</Text>
+          </TouchableOpacity>
+        </View>
         {renderContent(doc.content, isDark)}
+        <TouchableOpacity style={s.deleteButton} onPress={deleteDocument}>
+          <Text style={s.deleteText}>删除文档</Text>
+        </TouchableOpacity>
         <View style={{ height: 48 }} />
       </ScrollView>
     </View>
@@ -156,6 +204,13 @@ const s = StyleSheet.create({
   scrollArea: { flex: 1 },
   scrollContent: { padding: 20 },
   docTitle: { fontSize: 24, fontWeight: "700", marginBottom: 20, lineHeight: 32 },
+  practiceCard: { borderRadius: 12, padding: 14, marginBottom: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  practiceTitle: { fontSize: 15, fontWeight: "600" },
+  practiceMeta: { fontSize: 12, marginTop: 4 },
+  practiceButton: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9 },
+  practiceButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  deleteButton: { marginTop: 20, alignItems: "center", paddingVertical: 12 },
+  deleteText: { color: colors.danger, fontSize: 14 },
   h1: { fontSize: 20, fontWeight: "700", marginTop: 20, marginBottom: 10 },
   h2: { fontSize: 17, fontWeight: "600", marginTop: 18, marginBottom: 8 },
   h3: { fontSize: 15, fontWeight: "600", marginTop: 14, marginBottom: 6 },

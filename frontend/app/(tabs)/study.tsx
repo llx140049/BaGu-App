@@ -36,11 +36,11 @@ function FlashCardView({ card, onRate, onToggleStar }: { card: Card; onRate: (qu
         <Text style={[styles.catBadge, { color: colors.primary }]}>{card.cat}</Text>
         <Text style={[styles.cardText, { color: c }]}>{flipped ? card.a : card.q}</Text>
         {!flipped && <Text style={[styles.hint, { color: colors.textTertiary }]}>点击翻转</Text>}
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.starButton, { backgroundColor: surface }]} onPress={onToggleStar}>
-        <Text style={[styles.starButtonText, { color: card.isStarred ? colors.primary : colors.textSecondary }]}>
-          {card.isStarred ? "★ 已收藏" : "☆ 收藏"}
-        </Text>
+        <TouchableOpacity style={styles.starButton} onPress={onToggleStar}>
+          <Text style={[styles.starButtonText, { color: card.isStarred ? colors.primary : colors.textSecondary }]}>
+            {card.isStarred ? "★ 已收藏" : "☆ 收藏"}
+          </Text>
+        </TouchableOpacity>
       </TouchableOpacity>
       {flipped && (
         <View style={styles.qualityRow}>
@@ -287,11 +287,11 @@ const styles = StyleSheet.create({
   changeScopeText: { fontSize: 13, fontWeight: "600" },
   backToModeButton: { alignItems: "center", paddingVertical: 14 },
   backToModeText: { fontSize: 14, fontWeight: "600" },
-  card: { borderRadius: 16, padding: 28, minHeight: 260, justifyContent: "center", alignItems: "center", marginBottom: 20 },
+  card: { borderRadius: 16, padding: 28, minHeight: 260, justifyContent: "center", alignItems: "center", marginBottom: 20, position: "relative" },
   catBadge: { fontSize: 12, fontWeight: "600", marginBottom: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: "hidden", backgroundColor: "#e8ece4" },
   cardText: { fontSize: 18, lineHeight: 26, textAlign: "center" },
   hint: { fontSize: 12, marginTop: 24 },
-  starButton: { alignSelf: "center", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginTop: -12, marginBottom: 16 },
+  starButton: { position: "absolute", right: 16, bottom: 14, paddingHorizontal: 8, paddingVertical: 6 },
   starButtonText: { fontSize: 14, fontWeight: "600" },
   qualityRow: { flexDirection: "row", gap: 12 },
   pBtn: { flex: 1, padding: 16, borderRadius: 12, alignItems: "center" },

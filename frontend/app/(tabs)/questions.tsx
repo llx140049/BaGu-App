@@ -73,7 +73,7 @@ export default function QuestionsScreen() {
       });
 
       const database = await getDb();
-      const docContent = result.questions
+      const generatedQuestionSummary = result.questions
         .map((q: any, index: number) => `## ${index + 1}. ${q.cat}\n\nQ: ${q.q}\n\nA: ${q.a}`)
         .join("\n\n");
       await database.runAsync(
@@ -82,7 +82,7 @@ export default function QuestionsScreen() {
           result.document_id,
           result.file_name,
           "导入文档",
-          docContent || `来自 ${result.file_name} 的题库导入结果`,
+          result.content || generatedQuestionSummary || `来自 ${result.file_name} 的题库导入结果`,
           "AI 导入",
           new Date().toISOString(),
         ]

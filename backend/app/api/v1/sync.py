@@ -5,6 +5,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from app.core.security import get_current_user
+from app.core.database import get_db
+from app.models.question import Document
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 
@@ -47,7 +52,11 @@ class SyncPullResponse(BaseModel):
     synced_at: str
 
 @router.post("/push")
-async def sync_push(body: SyncPushRequest, user_id: str = Depends(get_current_user)):
+async def sync_push(
+    body: SyncPushRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     ud = _user_dir(user_id)
     
     existing_q = _read_json(ud / QUESTIONS_FILE)
@@ -68,7 +77,31 @@ async def sync_push(body: SyncPushRequest, user_id: str = Depends(get_current_us
     for d in body.documents:
         did = d.get("id")
         if did:
-            existing_d[did] = d
+            # Documents confirmed through /upload/confirm already have the
+            # extracted source text in the database. Prefer that canonical
+            # copy so an older device cannot replace it with its legacy Q/A
+            # summary during a later sync.
+            try:
+                document = await db.scalar(
+                    select(Document).where(Document.id == UUID(did), Document.user_id == UUID(user_id))
+                )
+            except ValueError:
+                document = None
+            if document is not None:
+                existing_d[did] = {
+                    "id": str(document.id),
+                    "title": document.title,
+                    "cat": document.cat,
+                    "content": document.content,
+                    "source": document.source,
+                    "tags": document.tags or [],
+                    "scroll_offset": document.scroll_offset or 0,
+                    "reading_progress": document.reading_progress or 0,
+                    "last_read_at": document.last_read_at.isoformat() if document.last_read_at else None,
+                    "created_at": document.created_at.isoformat() if document.created_at else None,
+                }
+            else:
+                existing_d[did] = d
     _write_json(ud / DOCUMENTS_FILE, existing_d)
 
     if body.settings:

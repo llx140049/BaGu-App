@@ -372,6 +372,16 @@ function createInMemoryDb() {
         }
       }
 
+      if (upper.includes("UPDATE DOCUMENTS SET TITLE = ?, CAT = ?, CONTENT = ?") && params) {
+        const document = tables.documents.find((row) => row.id === params[9]);
+        if (document) {
+          Object.assign(document, {
+            title: params[0], cat: params[1], content: params[2], source: params[3], tags: params[4],
+            scroll_offset: params[5], reading_progress: params[6], last_read_at: params[7], created_at: params[8],
+          });
+        }
+      }
+
       if (upper.includes("DELETE FROM DOCUMENTS WHERE ID = ?") && params) {
         const index = tables.documents.findIndex((row) => row.id === params[0]);
         if (index >= 0) tables.documents.splice(index, 1);

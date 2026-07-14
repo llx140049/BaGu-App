@@ -169,6 +169,11 @@ export default function SettingsScreen() {
             [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString()]
           );
           importedDocuments++;
+        } else {
+          await database.runAsync(
+            "UPDATE documents SET title = ?, cat = ?, content = ?, source = ?, tags = ?, scroll_offset = ?, reading_progress = ?, last_read_at = ?, created_at = ? WHERE id = ?",
+            [doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString(), doc.id]
+          );
         }
       }
 

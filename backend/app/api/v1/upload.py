@@ -113,6 +113,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                 "file_name": filename,
                 "file_type": file_type,
                 "file_path": str(save_path),
+                "content": text,
                 "questions": validated,
             }
 
@@ -172,10 +173,7 @@ async def confirm_upload(
         raise HTTPException(401, detail="Invalid user id") from exc
 
     document = await db.scalar(select(Document).where(Document.id == document_id, Document.user_id == owner_id))
-    content = "\n\n".join(
-        f"## {index + 1}. {item['cat']}\n\nQ: {item['q']}\n\nA: {item['a']}"
-        for index, item in enumerate(questions)
-    )
+    content = preview["content"]
     if document is None:
         document = Document(
             id=document_id,
@@ -208,5 +206,6 @@ async def confirm_upload(
         "imported": len(questions),
         "document_id": preview["document_id"],
         "file_name": preview["file_name"],
+        "content": content,
         "questions": questions,
     }

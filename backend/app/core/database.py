@@ -21,3 +21,7 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+# Ensure model metadata is registered before init_db() creates tables.
+from app.models import question as _question_models  # noqa: E402,F401

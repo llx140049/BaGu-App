@@ -5,11 +5,10 @@ import { Text } from "react-native";
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   const icons: Record<string, string> = {
-    "首页": "🏠",
     "学习": "📖",
-    "题库": "📚",
+    "知识库": "📚",
     "统计": "📊",
-    "设置": "⚙️",
+    "我的": "👤",
   };
   return (
     <Text style={{ fontSize: focused ? 22 : 18 }}>
@@ -37,13 +36,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "首页",
-          tabBarIcon: ({ focused }) => <TabIcon label="首页" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="study"
-        options={{
           title: "学习",
           tabBarIcon: ({ focused }) => <TabIcon label="学习" focused={focused} />,
         }}
@@ -51,8 +43,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="questions"
         options={{
-          title: "题库",
-          tabBarIcon: ({ focused }) => <TabIcon label="题库" focused={focused} />,
+          title: "知识库",
+          tabBarIcon: ({ focused }) => <TabIcon label="知识库" focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -65,10 +57,13 @@ export default function TabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: "设置",
-          tabBarIcon: ({ focused }) => <TabIcon label="设置" focused={focused} />,
+          title: "我的",
+          tabBarIcon: ({ focused }) => <TabIcon label="我的" focused={focused} />,
         }}
       />
+      <Tabs.Screen name="study" options={{ href: null }} />
+      <Tabs.Screen name="doc-reader" options={{ href: null }} />
+      <Tabs.Screen name="collection" options={{ href: null }} />
     </Tabs>
   );
 }

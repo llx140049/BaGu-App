@@ -47,7 +47,12 @@ export async function getDb(): Promise<any> {
       count INTEGER DEFAULT 0,
       correct INTEGER DEFAULT 0,
       incorrect INTEGER DEFAULT 0,
+      new_count INTEGER DEFAULT 0,
       UNIQUE(user_id, date)
+    );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY,
@@ -56,6 +61,9 @@ export async function getDb(): Promise<any> {
       content TEXT NOT NULL,
       source TEXT DEFAULT '',
       tags TEXT DEFAULT '[]',
+      scroll_offset REAL DEFAULT 0,
+      reading_progress REAL DEFAULT 0,
+      last_read_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
@@ -63,6 +71,22 @@ export async function getDb(): Promise<any> {
   const questionColumns: { name: string }[] = await db.getAllAsync("PRAGMA table_info(questions)");
   if (!questionColumns.some((column) => column.name === "source_document_id")) {
     await db.execAsync("ALTER TABLE questions ADD COLUMN source_document_id TEXT DEFAULT NULL");
+  }
+
+  const studyRecordColumns: { name: string }[] = await db.getAllAsync("PRAGMA table_info(study_records)");
+  if (!studyRecordColumns.some((column) => column.name === "new_count")) {
+    await db.execAsync("ALTER TABLE study_records ADD COLUMN new_count INTEGER DEFAULT 0");
+  }
+
+  const documentColumns: { name: string }[] = await db.getAllAsync("PRAGMA table_info(documents)");
+  if (!documentColumns.some((column) => column.name === "scroll_offset")) {
+    await db.execAsync("ALTER TABLE documents ADD COLUMN scroll_offset REAL DEFAULT 0");
+  }
+  if (!documentColumns.some((column) => column.name === "reading_progress")) {
+    await db.execAsync("ALTER TABLE documents ADD COLUMN reading_progress REAL DEFAULT 0");
+  }
+  if (!documentColumns.some((column) => column.name === "last_read_at")) {
+    await db.execAsync("ALTER TABLE documents ADD COLUMN last_read_at TEXT");
   }
 
   return db;

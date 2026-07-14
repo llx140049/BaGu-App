@@ -5,13 +5,26 @@ import { MASTERED_LEVEL } from "./sm2";
 type Row = Record<string, any>;
 
 let instance: any = null;
+const WEB_STORAGE_KEY = "bagu_memory_web_database_v1";
 
 function createInMemoryDb() {
-  const tables: Record<string, Row[]> = {
+  const emptyTables: Record<string, Row[]> = {
     questions: [],
     card_progress: [],
     study_records: [],
     documents: [],
+    app_settings: [],
+  };
+  let storedTables: Partial<Record<string, Row[]>> = {};
+  try {
+    storedTables = JSON.parse(globalThis.localStorage?.getItem(WEB_STORAGE_KEY) ?? "{}") ?? {};
+  } catch {}
+  const tables: Record<string, Row[]> = {
+    ...emptyTables,
+    ...Object.fromEntries(Object.keys(emptyTables).map((name) => [name, Array.isArray(storedTables[name]) ? storedTables[name] : []])),
+  };
+  const persist = () => {
+    try { globalThis.localStorage?.setItem(WEB_STORAGE_KEY, JSON.stringify(tables)); } catch {}
   };
 
   const findQuestionById = (id: string) => tables.questions.find((row) => row.id === id);
@@ -34,6 +47,7 @@ function createInMemoryDb() {
       existing.count += row.count ?? 1;
       existing.correct += row.correct ?? 0;
       existing.incorrect += row.incorrect ?? 0;
+      existing.new_count = (existing.new_count ?? 0) + (row.new_count ?? 0);
       return;
     }
     tables.study_records.push(row);
@@ -48,6 +62,7 @@ function createInMemoryDb() {
         q: question.q,
         a: question.a,
         source_document_id: question.source_document_id ?? null,
+        tags: question.tags ?? "[]",
         level: progress.level ?? 0,
         correct: progress.correct ?? 0,
         incorrect: progress.incorrect ?? 0,
@@ -87,7 +102,11 @@ function createInMemoryDb() {
     execAsync: async (_sql: string) => {},
     getAllAsync: async (sql: string, params?: any[]): Promise<any[]> => {
       if (sql.includes("LEFT JOIN card_progress cp ON q.id = cp.question_id")) {
-        return joinQuestionsAndProgress();
+        const rows = joinQuestionsAndProgress();
+        if (sql.includes("WHERE q.source_document_id = ?")) {
+          return rows.filter((row) => row.source_document_id === params?.[0]);
+        }
+        return rows;
       }
       if (sql.includes("FROM questions q") && sql.includes("GROUP BY q.cat")) {
         return groupByCategory();
@@ -99,8 +118,14 @@ function createInMemoryDb() {
         const id = params?.[0];
         return tables.documents.filter((row) => row.id === id);
       }
+      if (sql.includes("FROM questions WHERE source_document_id = ?")) {
+        return tables.questions.filter((row) => row.source_document_id === params?.[0]);
+      }
       if (sql.includes("FROM documents")) {
         return tables.documents.slice();
+      }
+      if (sql.includes("FROM app_settings")) {
+        return tables.app_settings.slice();
       }
       if (sql.includes("SELECT id, title, cat, source FROM documents")) {
         return tables.documents.map((row) => ({
@@ -142,6 +167,15 @@ function createInMemoryDb() {
           source_document_id: row.source_document_id ?? null,
         }));
       }
+      if (sql.includes("SELECT id, cat, q, a, source_document_id FROM questions")) {
+        return tables.questions.map((row) => ({
+          id: row.id,
+          cat: row.cat,
+          q: row.q,
+          a: row.a,
+          source_document_id: row.source_document_id ?? null,
+        }));
+      }
       if (sql.includes("SELECT id, cat, q FROM questions")) {
         return tables.questions.map((row) => ({
           id: row.id,
@@ -178,6 +212,15 @@ function createInMemoryDb() {
         const date = params?.[0];
         const row = findStudyRecordByDate(date);
         return { cnt: row?.count ?? 0 };
+      }
+      if (upper.includes("FROM STUDY_RECORDS") && upper.includes("SUM(NEW_COUNT)")) {
+        const date = params?.[0];
+        const row = findStudyRecordByDate(date);
+        return { cnt: row?.new_count ?? 0 };
+      }
+      if (upper.includes("FROM APP_SETTINGS") && upper.includes("WHERE KEY = ?")) {
+        const row = tables.app_settings.find((setting) => setting.key === params?.[0]);
+        return row ?? null;
       }
       if (upper.includes("FROM STUDY_RECORDS") && upper.includes("COUNT(")) {
         const date = params?.[0];
@@ -221,55 +264,75 @@ function createInMemoryDb() {
     runAsync: async (sql: string, params?: any[]) => {
       const upper = sql.toUpperCase();
 
-      if (upper.includes("INSERT INTO QUESTIONS") && params) {
+      if (upper.includes("INTO QUESTIONS") && params) {
+        const literalUserId = sql.match(/VALUES\s*\(\?\s*,\s*'([^']+)'\s*,/i)?.[1];
+        const usesLiteralUserId = Boolean(literalUserId);
+        const valueOffset = usesLiteralUserId ? 1 : 2;
         tables.questions.push({
           id: params[0],
-          user_id: params[1],
-          cat: params[2],
-          q: params[3],
-          a: params[4],
-          source: params[5] ?? "",
-          source_document_id: params[6] ?? null,
-          tags: params[7] ?? "[]",
-          created_at: params[8] ?? new Date().toISOString(),
+          user_id: literalUserId ?? params[1],
+          cat: params[valueOffset],
+          q: params[valueOffset + 1],
+          a: params[valueOffset + 2],
+          source: params[valueOffset + 3] ?? "",
+          source_document_id: params[valueOffset + 4] ?? null,
+          tags: params[valueOffset + 5] ?? "[]",
+          created_at: params[valueOffset + 6] ?? new Date().toISOString(),
         });
       }
 
-      if (upper.includes("INSERT INTO CARD_PROGRESS") && params) {
+      if (upper.includes("INTO CARD_PROGRESS") && params) {
+        const literalUserId = sql.match(/VALUES\s*\(\?\s*,\s*'([^']+)'\s*,/i)?.[1];
+        const valueOffset = literalUserId ? 1 : 2;
         upsertProgress({
           id: params[0],
-          user_id: params[1],
-          question_id: params[2],
-          level: params[3] ?? 0,
-          correct: params[4] ?? 0,
-          incorrect: params[5] ?? 0,
-          last_review: params[6] ?? null,
-          next_review: params[7] ?? null,
-          is_starred: params[8] ?? 0,
+          user_id: literalUserId ?? params[1],
+          question_id: params[valueOffset],
+          level: params[valueOffset + 1] ?? 0,
+          correct: params[valueOffset + 2] ?? 0,
+          incorrect: params[valueOffset + 3] ?? 0,
+          last_review: params[valueOffset + 4] ?? null,
+          next_review: params[valueOffset + 5] ?? null,
+          is_starred: params[valueOffset + 6] ?? 0,
         });
       }
 
       if (upper.includes("INSERT INTO STUDY_RECORDS") && params) {
-        upsertStudyRecord({
-          id: params[0],
-          user_id: "local",
-          date: params[1],
-          count: 1,
-          correct: params[2] ?? 0,
-          incorrect: params[3] ?? 0,
+        const isSyncedRecord = upper.includes("'CLOUD'");
+        upsertStudyRecord(isSyncedRecord ? {
+          id: params[0], user_id: "cloud", date: params[1], count: params[2] ?? 0,
+          correct: params[3] ?? 0, incorrect: params[4] ?? 0, new_count: params[5] ?? 0,
+        } : {
+          id: params[0], user_id: "local", date: params[1], count: 1,
+          correct: params[2] ?? 0, incorrect: params[3] ?? 0, new_count: params[4] ?? 0,
         });
       }
 
-      if (upper.includes("INSERT INTO DOCUMENTS") && params) {
-        tables.documents.push({
+      if (upper.includes("INSERT INTO APP_SETTINGS") && params) {
+        const existing = tables.app_settings.find((setting) => setting.key === params[0]);
+        if (existing) existing.value = params[1];
+        else tables.app_settings.push({ key: params[0], value: params[1] });
+      }
+
+      if (upper.includes("INTO DOCUMENTS") && params) {
+        const existingIndex = tables.documents.findIndex((row) => row.id === params[0]);
+        if (!(upper.includes("OR IGNORE") && existingIndex >= 0)) {
+          const hasReadingFields = upper.includes("SCROLL_OFFSET");
+          const document = {
           id: params[0],
           title: params[1],
           cat: params[2],
           content: params[3],
           source: params[4] ?? "",
-          tags: "[]",
-          created_at: new Date().toISOString(),
-        });
+          tags: hasReadingFields ? (params[5] ?? "[]") : "[]",
+          scroll_offset: hasReadingFields ? (params[6] ?? 0) : 0,
+          reading_progress: hasReadingFields ? (params[7] ?? 0) : 0,
+          last_read_at: hasReadingFields ? (params[8] ?? null) : null,
+          created_at: hasReadingFields ? (params[9] ?? new Date().toISOString()) : (params[5] ?? new Date().toISOString()),
+          };
+          if (existingIndex >= 0) tables.documents[existingIndex] = document;
+          else tables.documents.push(document);
+        }
       }
 
       if (upper.includes("UPDATE QUESTIONS SET Q = ?, A = ? WHERE ID = ?") && params) {
@@ -278,6 +341,50 @@ function createInMemoryDb() {
           question.q = params[0];
           question.a = params[1];
         }
+      }
+
+      if (upper.includes("UPDATE QUESTIONS SET CAT = ?, Q = ?, A = ? WHERE ID = ?") && params) {
+        const question = findQuestionById(params[3]);
+        if (question) {
+          question.cat = params[0];
+          question.q = params[1];
+          question.a = params[2];
+        }
+      }
+
+      if (upper.includes("UPDATE QUESTIONS SET SOURCE_DOCUMENT_ID = NULL WHERE SOURCE_DOCUMENT_ID = ?") && params) {
+        for (const question of tables.questions) {
+          if (question.source_document_id === params[0]) question.source_document_id = null;
+        }
+      }
+
+      if (upper.includes("UPDATE DOCUMENTS SET TITLE = ? WHERE ID = ?") && params) {
+        const document = tables.documents.find((row) => row.id === params[1]);
+        if (document) document.title = params[0];
+      }
+
+      if (upper.includes("UPDATE DOCUMENTS SET SCROLL_OFFSET = ?") && params) {
+        const document = tables.documents.find((row) => row.id === params[3]);
+        if (document) {
+          document.scroll_offset = params[0];
+          document.reading_progress = params[1];
+          document.last_read_at = params[2];
+        }
+      }
+
+      if (upper.includes("DELETE FROM DOCUMENTS WHERE ID = ?") && params) {
+        const index = tables.documents.findIndex((row) => row.id === params[0]);
+        if (index >= 0) tables.documents.splice(index, 1);
+      }
+
+      if (upper.includes("DELETE FROM CARD_PROGRESS WHERE QUESTION_ID = ?") && params) {
+        const index = tables.card_progress.findIndex((row) => row.question_id === params[0]);
+        if (index >= 0) tables.card_progress.splice(index, 1);
+      }
+
+      if (upper.includes("DELETE FROM QUESTIONS WHERE ID = ?") && params) {
+        const index = tables.questions.findIndex((row) => row.id === params[0]);
+        if (index >= 0) tables.questions.splice(index, 1);
       }
 
       if (upper.includes("UPDATE CARD_PROGRESS SET") && params) {
@@ -298,8 +405,21 @@ function createInMemoryDb() {
           record.count += 1;
           record.correct += params[0] ?? 0;
           record.incorrect += params[1] ?? 0;
+          record.new_count += params[2] ?? 0;
         }
       }
+
+      if (upper.includes("UPDATE STUDY_RECORDS SET COUNT = ?") && params) {
+        const record = findStudyRecordByDate(params[4]);
+        if (record) {
+          record.count = params[0];
+          record.correct = params[1];
+          record.incorrect = params[2];
+          record.new_count = params[3];
+        }
+      }
+
+      persist();
     },
   };
 }

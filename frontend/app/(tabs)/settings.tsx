@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator } from "react-native";
+import { useRouter } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
-import { Platform } from "react-native";
 import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
-
-const API_BASE = Platform.OS === "web" ? "http://localhost:8001" : "http://192.168.2.11:8001";
+import { API_BASE } from "../../src/services/api";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -24,6 +23,7 @@ async function apiRequest(path: string, body?: any, token?: string) {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const isDark = theme === "dark";
@@ -44,10 +44,36 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState("");
 
+  // Local learning goal
+  const [dailyNewTarget, setDailyNewTarget] = useState("10");
+
   // On mount, restore saved token
   useEffect(() => {
     try { const saved = localStorage?.getItem("bagu_sync_token"); const savedEmail = localStorage?.getItem("bagu_sync_email"); if (saved) { setToken(saved); setUserEmail(savedEmail || ""); } } catch {}
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const database = await getDb();
+      const setting = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["daily_new_target"]);
+      if (setting?.value) setDailyNewTarget(setting.value);
+    })().catch(() => {});
+  }, []);
+
+  const saveDailyNewTarget = async () => {
+    const target = Math.floor(Number(dailyNewTarget));
+    if (!Number.isFinite(target) || target < 1 || target > 200) {
+      Alert.alert("请输入 1 到 200 之间的题目数量");
+      return;
+    }
+    const database = await getDb();
+    await database.runAsync(
+      "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ["daily_new_target", String(target)]
+    );
+    setDailyNewTarget(String(target));
+    Alert.alert("已保存", `每日新题目标：${target} 题`);
+  };
 
   const handleAuth = async () => {
     if (!email || !password) { Alert.alert("请输入邮箱和密码"); return; }
@@ -92,9 +118,17 @@ export default function SettingsScreen() {
         "SELECT id, question_id, level, correct, incorrect, last_review, next_review, is_starred FROM card_progress"
       );
       const allDocuments: any[] = await database.getAllAsync(
-        "SELECT id, title, cat, content, source, created_at FROM documents"
+        "SELECT id, title, cat, content, source, tags, scroll_offset, reading_progress, last_read_at, created_at FROM documents"
       );
-      await apiRequest("/api/v1/sync/push", { questions: allQuestions, progress: allProgress, documents: allDocuments }, token);
+      const localSettings: any[] = await database.getAllAsync("SELECT key, value FROM app_settings");
+      const localStudyRecords: any[] = await database.getAllAsync(
+        "SELECT id, date, count, correct, incorrect, new_count FROM study_records"
+      );
+      await apiRequest(
+        "/api/v1/sync/push",
+        { questions: allQuestions, progress: allProgress, documents: allDocuments, settings: Object.fromEntries(localSettings.map((item) => [item.key, item.value])), study_records: localStudyRecords },
+        token
+      );
       
       // Pull
       const data: any = await apiRequest("/api/v1/sync/pull", undefined, token);
@@ -131,10 +165,32 @@ export default function SettingsScreen() {
         );
         if (!existing) {
           await database.runAsync(
-            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", doc.created_at || new Date().toISOString()]
+            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, tags, scroll_offset, reading_progress, last_read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString()]
           );
           importedDocuments++;
+        }
+      }
+
+      for (const [key, value] of Object.entries(data.settings ?? {})) {
+        await database.runAsync(
+          "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+          [key, String(value)]
+        );
+      }
+
+      for (const record of data.study_records ?? []) {
+        const existing = await database.getFirstAsync("SELECT id FROM study_records WHERE date = ?", [record.date]);
+        if (existing?.id) {
+          await database.runAsync(
+            "UPDATE study_records SET count = ?, correct = ?, incorrect = ?, new_count = ? WHERE date = ?",
+            [record.count ?? 0, record.correct ?? 0, record.incorrect ?? 0, record.new_count ?? 0, record.date]
+          );
+        } else {
+          await database.runAsync(
+            "INSERT INTO study_records (id, user_id, date, count, correct, incorrect, new_count) VALUES (?, 'cloud', ?, ?, ?, ?, ?)",
+            [record.id || genId(), record.date, record.count ?? 0, record.correct ?? 0, record.incorrect ?? 0, record.new_count ?? 0]
+          );
         }
       }
 
@@ -195,7 +251,19 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
-      <Text style={[styles.title, { color: c }]}>设置</Text>
+      <Text style={[styles.title, { color: c }]}>我的</Text>
+
+      <View style={[styles.card, { backgroundColor: surface }]}>
+        <Text style={[styles.sectionTitle, { color: colors.primary }]}>学习工具</Text>
+        <TouchableOpacity style={styles.entryRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "starred" } })}>
+          <Text style={[styles.settingLabel, { color: c }]}>收藏夹</Text>
+          <Text style={[styles.entryArrow, { color: colors.textTertiary }]}>›</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.entryRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "mistakes" } })}>
+          <Text style={[styles.settingLabel, { color: c }]}>错题本</Text>
+          <Text style={[styles.entryArrow, { color: colors.textTertiary }]}>›</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Account Section */}
       <View style={[styles.card, { backgroundColor: surface }]}>
@@ -271,6 +339,25 @@ export default function SettingsScreen() {
 
       {/* Theme Section */}
       <View style={[styles.card, { backgroundColor: surface }]}>
+        <Text style={[styles.sectionTitle, { color: colors.primary }]}>学习设置</Text>
+        <Text style={[styles.settingDesc, { color: colors.textTertiary }]}>每日新题目标</Text>
+        <View style={styles.goalRow}>
+          <TextInput
+            style={[styles.goalInput, { color: c, borderColor: colors.border }]}
+            value={dailyNewTarget}
+            onChangeText={setDailyNewTarget}
+            keyboardType="number-pad"
+            maxLength={3}
+          />
+          <Text style={[styles.goalUnit, { color: c }]}>题</Text>
+          <TouchableOpacity style={[styles.saveGoalButton, { backgroundColor: colors.primary }]} onPress={saveDailyNewTarget}>
+            <Text style={styles.btnText}>保存</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Theme Section */}
+      <View style={[styles.card, { backgroundColor: surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>外观</Text>
         <View style={styles.settingRow}>
           <Text style={[styles.settingLabel, { color: c }]}>暗色模式</Text>
@@ -294,9 +381,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: "600", marginBottom: 12 },
   card: { borderRadius: 12, padding: 20, marginBottom: 12 },
   settingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  entryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 },
+  entryArrow: { fontSize: 28, lineHeight: 28 },
   settingLabel: { fontSize: 16, fontWeight: "500" },
   settingDesc: { fontSize: 12, marginTop: 8, lineHeight: 18 },
   row: { flexDirection: "row", gap: 10, marginTop: 14 },
+  goalRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  goalInput: { width: 72, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, fontSize: 16, textAlign: "center" },
+  goalUnit: { fontSize: 15, marginLeft: 8 },
+  saveGoalButton: { marginLeft: "auto", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 8 },
   btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
   btnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
   version: { fontSize: 12, textAlign: "center", marginTop: 32 },

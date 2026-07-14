@@ -3,8 +3,13 @@ import uuid
 import traceback
 from pathlib import Path
 from collections import defaultdict
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.models.question import Document, Question
 from app.services.pdf_service import extract_text_from_pdf, extract_text_from_markdown
 from app.services.deepseek import generate_questions_from_text
 
@@ -140,7 +145,11 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @router.post("/confirm")
-async def confirm_upload(body: dict):
+async def confirm_upload(
+    body: dict,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     token = body.get("preview_token", "")
     if token not in _preview_store:
         raise HTTPException(404, detail="预览数据已过期，请重新上传")
@@ -156,6 +165,43 @@ async def confirm_upload(body: dict):
                     questions[idx][key] = edit[key]
 
     questions = [q for q in questions if not q.get("_deleted")]
+    try:
+        owner_id = uuid.UUID(user_id)
+        document_id = uuid.UUID(preview["document_id"])
+    except ValueError as exc:
+        raise HTTPException(401, detail="Invalid user id") from exc
+
+    document = await db.scalar(select(Document).where(Document.id == document_id, Document.user_id == owner_id))
+    content = "\n\n".join(
+        f"## {index + 1}. {item['cat']}\n\nQ: {item['q']}\n\nA: {item['a']}"
+        for index, item in enumerate(questions)
+    )
+    if document is None:
+        document = Document(
+            id=document_id,
+            user_id=owner_id,
+            title=preview["file_name"],
+            cat="导入文档",
+            content=content,
+            source="AI 导入",
+            source_file_name=preview["file_name"],
+        )
+        db.add(document)
+    else:
+        document.content = content
+    for item in questions:
+        db.add(
+            Question(
+                user_id=owner_id,
+                cat=item["cat"],
+                q=item["q"],
+                a=item["a"],
+                source=item.get("source", ""),
+                source_document_id=document_id,
+                tags=item.get("tags", []),
+            )
+        )
+    await db.commit()
     _preview_store.pop(token, None)
 
     return {

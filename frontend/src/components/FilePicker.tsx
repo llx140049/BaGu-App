@@ -6,9 +6,10 @@ interface FilePickerProps {
   onFileSelected: (file: { uri: string; name: string; bytes: ArrayBuffer }) => void;
   label?: string;
   isDark?: boolean;
+  floating?: boolean;
 }
 
-export default function FilePicker({ onFileSelected, label = "选择文件", isDark }: FilePickerProps) {
+export default function FilePicker({ onFileSelected, label = "选择文件", isDark, floating = false }: FilePickerProps) {
   const [fileName, setFileName] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -17,7 +18,7 @@ export default function FilePicker({ onFileSelected, label = "选择文件", isD
     return (
       <View>
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: colors.primary }]}
+          style={[styles.btn, floating && styles.floatingButton, { backgroundColor: colors.primary }]}
           onPress={() => inputRef.current?.click()}
         >
           <Text style={styles.btnText}>{fileName || label}</Text>
@@ -44,7 +45,7 @@ export default function FilePicker({ onFileSelected, label = "选择文件", isD
   return (
     <View>
       <TouchableOpacity
-        style={[styles.btn, { backgroundColor: colors.primary }]}
+        style={[styles.btn, floating && styles.floatingButton, { backgroundColor: colors.primary }]}
         onPress={() => {
           Alert.alert(
             "通过浏览器上传",
@@ -54,15 +55,16 @@ export default function FilePicker({ onFileSelected, label = "选择文件", isD
       >
         <Text style={styles.btnText}>📄 {label}</Text>
       </TouchableOpacity>
-      <Text style={[styles.hint, { color: colors.textTertiary }]}>
+      {!floating ? <Text style={[styles.hint, { color: colors.textTertiary }]}>
         ⚠️ 手机端暂不支持文件选择，请使用 Web 版上传
-      </Text>
+      </Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   btn: { padding: 14, borderRadius: 10, alignItems: "center" },
+  floatingButton: { width: 56, height: 56, borderRadius: 28, padding: 0, justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   btnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
   hint: { fontSize: 12, textAlign: "center", marginTop: 8, lineHeight: 18 },
 });

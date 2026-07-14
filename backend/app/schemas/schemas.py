@@ -8,18 +8,39 @@ from pydantic import BaseModel
 # ─── Document ───
 class DocumentCreate(BaseModel):
     title: str
+    cat: str = ""
     content: str = ""
     source: Optional[str] = ""
     source_file_name: Optional[str] = ""
+    tags: List[str] = []
+
+
+class DocumentUpdate(BaseModel):
+    title: Optional[str] = None
+    cat: Optional[str] = None
+    content: Optional[str] = None
+    source: Optional[str] = None
+    source_file_name: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class ReadingProgressUpdate(BaseModel):
+    scroll_offset: float = 0
+    reading_progress: float = 0
 
 
 class DocumentResponse(BaseModel):
     id: UUID
     user_id: UUID
     title: str
+    cat: str = ""
     content: str = ""
     source: Optional[str] = ""
     source_file_name: Optional[str] = ""
+    tags: List[str] = []
+    scroll_offset: float = 0
+    reading_progress: float = 0
+    last_read_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -140,6 +161,36 @@ class StatsCompare(BaseModel):
     avg_accuracy: float = 0.0
     your_streak: int = 0
     avg_streak: int = 0
+
+
+class TagProgress(BaseModel):
+    tag: str
+    total: int = 0
+    mastered: int = 0
+    progress: float = 0.0
+
+
+class UserSettingsUpdate(BaseModel):
+    daily_new_target: int
+
+
+class UserSettingsResponse(BaseModel):
+    daily_new_target: int = 10
+
+
+class ContinueReading(BaseModel):
+    id: UUID
+    title: str
+    reading_progress: float = 0
+    last_read_at: Optional[datetime] = None
+
+
+class HomeOverview(BaseModel):
+    due_count: int = 0
+    today_new_remaining: int = 0
+    daily_new_target: int = 10
+    today_new_completed: int = 0
+    continue_reading: Optional[ContinueReading] = None
 
 
 # ─── Auth ───

@@ -3,6 +3,31 @@ import { Platform } from "react-native";
 // On phone (Expo Go), use the computer's LAN IP; on web (browser), use localhost.
 const HOST = Platform.OS === "web" ? "localhost" : "192.168.2.11";
 export const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? `http://${HOST}:8001`;
+let activeAuthToken = "";
+
+export function setApiAuthToken(token: string) {
+  activeAuthToken = token;
+}
+
+async function getApiAuthToken() {
+  if (activeAuthToken) return activeAuthToken;
+  try {
+    const webToken = globalThis.localStorage?.getItem("bagu_sync_token");
+    if (webToken) {
+      activeAuthToken = webToken;
+      return webToken;
+    }
+  } catch {}
+  if (Platform.OS !== "web") {
+    try {
+      const { getDb } = await import("../data/db");
+      const database = await getDb();
+      const setting = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_token"]);
+      activeAuthToken = setting?.value || "";
+    } catch {}
+  }
+  return activeAuthToken;
+}
 
 async function request<T>(
   path: string,
@@ -11,10 +36,8 @@ async function request<T>(
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
-  try {
-    const token = globalThis.localStorage?.getItem("bagu_sync_token");
-    if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
-  } catch {}
+  const token = await getApiAuthToken();
+  if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
   // Don't set Content-Type for FormData (let fetch set it with boundary)
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
@@ -47,10 +70,21 @@ export const questionsApi = {
 };
 
 export const uploadApi = {
-  uploadPdf: async (file: { uri?: string; name: string; bytes: ArrayBuffer }) => {
+  uploadPdf: async (
+    file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
+    generateQuestions = true
+  ) => {
     const formData = new FormData();
-    const blob = new Blob([file.bytes]);
-    formData.append("file", blob, file.name);
+    if (Platform.OS === "web") {
+      formData.append("file", new Blob([file.bytes!]), file.name);
+    } else {
+      formData.append("file", {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType || "application/octet-stream",
+      } as any);
+    }
+    formData.append("generate_questions", String(generateQuestions));
     return request<any>("/api/v1/upload/pdf", {
       method: "POST",
       body: formData,

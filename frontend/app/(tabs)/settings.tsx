@@ -5,7 +5,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
-import { API_BASE } from "../../src/services/api";
+import { API_BASE, setApiAuthToken } from "../../src/services/api";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -47,9 +47,28 @@ export default function SettingsScreen() {
   // Local learning goal
   const [dailyNewTarget, setDailyNewTarget] = useState("10");
 
-  // On mount, restore saved token
+  // Restore the current login for both Web and native SQLite.
   useEffect(() => {
-    try { const saved = localStorage?.getItem("bagu_sync_token"); const savedEmail = localStorage?.getItem("bagu_sync_email"); if (saved) { setToken(saved); setUserEmail(savedEmail || ""); } } catch {}
+    (async () => {
+      try {
+        const saved = localStorage?.getItem("bagu_sync_token");
+        const savedEmail = localStorage?.getItem("bagu_sync_email");
+        if (saved) {
+          setToken(saved);
+          setApiAuthToken(saved);
+          setUserEmail(savedEmail || "");
+          return;
+        }
+      } catch {}
+      const database = await getDb();
+      const savedToken = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_token"]);
+      const savedEmail = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_email"]);
+      if (savedToken?.value) {
+        setToken(savedToken.value);
+        setApiAuthToken(savedToken.value);
+        setUserEmail(savedEmail?.value || "");
+      }
+    })().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -81,6 +100,7 @@ export default function SettingsScreen() {
     try {
       const data = await apiRequest(`/api/v1/auth/${isRegister ? "register" : "login"}`, { email, password });
       setToken(data.token);
+      setApiAuthToken(data.token);
       setUserEmail(data.email);
       setEmail("");
       setPassword("");
@@ -89,6 +109,15 @@ export default function SettingsScreen() {
         localStorage?.setItem("bagu_sync_token", data.token);
         localStorage?.setItem("bagu_sync_email", data.email);
       } catch {}
+      const database = await getDb();
+      await database.runAsync(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        ["auth_token", data.token]
+      );
+      await database.runAsync(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        ["auth_email", data.email]
+      );
       
       Alert.alert(isRegister ? "注册成功" : "登录成功", `欢迎, ${data.email}`);
     } catch (e: any) {
@@ -99,9 +128,14 @@ export default function SettingsScreen() {
 
   const handleLogout = () => {
     setToken("");
+    setApiAuthToken("");
     setUserEmail("");
     setLastSync("");
     try { localStorage?.removeItem("bagu_sync_token"); localStorage?.removeItem("bagu_sync_email"); } catch {}
+    getDb().then(async (database) => {
+      await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ["auth_token", ""]);
+      await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ["auth_email", ""]);
+    }).catch(() => {});
   };
 
   const handleSync = async () => {

@@ -51,10 +51,25 @@ export default function QuestionsScreen() {
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
-  const handleFileSelected = async (file: { uri: string; name: string; bytes: ArrayBuffer }) => {
+  const handleFileSelected = async (file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string }) => {
+    Alert.alert(
+      "选择导入方式",
+      `已选择：${file.name}`,
+      [
+        { text: "取消", style: "cancel" },
+        { text: "仅导入原文", onPress: () => uploadFile(file, false) },
+        { text: "生成题目", onPress: () => uploadFile(file, true) },
+      ]
+    );
+  };
+
+  const uploadFile = async (
+    file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
+    generateQuestions: boolean
+  ) => {
     setUploading(true);
     try {
-      const data: any = await uploadApi.uploadPdf(file);
+      const data: any = await uploadApi.uploadPdf(file, generateQuestions);
       setPreviewData(data);
       setShowPreview(true);
     } catch (e: any) {

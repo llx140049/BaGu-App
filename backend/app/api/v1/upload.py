@@ -3,7 +3,7 @@ import uuid
 import traceback
 from pathlib import Path
 from collections import defaultdict
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -59,7 +59,10 @@ def _fix_qa_swap(q_item: dict) -> dict:
 
 
 @router.post("/pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    generate_questions: bool = Form(True),
+):
     try:
         filename = file.filename or "untitled"
         ext = os.path.splitext(filename)[1].lower()
@@ -87,24 +90,25 @@ async def upload_pdf(file: UploadFile = File(...)):
             if not text.strip():
                 raise HTTPException(400, detail="无法从文件中提取到任何文本内容")
 
-            questions = await generate_questions_from_text(text)
             document_id = str(uuid.uuid4())
 
             validated = []
-            for q in questions:
-                if not isinstance(q, dict) or "cat" not in q or "q" not in q or "a" not in q:
-                    continue
-                item = {
-                    "cat": str(q["cat"]),
-                    "q": str(q["q"]),
-                    "a": str(q["a"]),
-                    "source_document_id": document_id,
-                    "source_document_ids": [document_id],
-                }
-                item = _fix_qa_swap(item)
-                validated.append(item)
+            if generate_questions:
+                questions = await generate_questions_from_text(text)
+                for q in questions:
+                    if not isinstance(q, dict) or "cat" not in q or "q" not in q or "a" not in q:
+                        continue
+                    item = {
+                        "cat": str(q["cat"]),
+                        "q": str(q["q"]),
+                        "a": str(q["a"]),
+                        "source_document_id": document_id,
+                        "source_document_ids": [document_id],
+                    }
+                    item = _fix_qa_swap(item)
+                    validated.append(item)
 
-            if not validated:
+            if generate_questions and not validated:
                 raise HTTPException(500, detail="AI 未能生成有效题目，请检查 DeepSeek API Key 或重试")
 
             preview_token = str(uuid.uuid4())
@@ -115,6 +119,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                 "file_path": str(save_path),
                 "content": text,
                 "questions": validated,
+                "generate_questions": generate_questions,
             }
 
             grouped: dict[str, list[dict]] = defaultdict(list)
@@ -126,6 +131,8 @@ async def upload_pdf(file: UploadFile = File(...)):
                 "document_id": document_id,
                 "file_name": filename,
                 "total": len(validated),
+                "generate_questions": generate_questions,
+                "content": text,
                 "categories": [
                     {"cat": cat, "count": len(items), "questions": items}
                     for cat, items in grouped.items()
@@ -208,4 +215,5 @@ async def confirm_upload(
         "file_name": preview["file_name"],
         "content": content,
         "questions": questions,
+        "generate_questions": preview["generate_questions"],
     }

@@ -16,6 +16,8 @@ interface UploadPreviewProps {
     preview_token: string;
     file_name: string;
     total: number;
+    generate_questions?: boolean;
+    content?: string;
     categories: { cat: string; count: number; questions: QuestionItem[] }[];
   } | null;
   onConfirm: (edits: { index: number; cat?: string; q?: string; a?: string; _deleted?: boolean }[]) => void;
@@ -33,6 +35,7 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
   const allQuestions = previewData
     ? previewData.categories.flatMap((cat) => cat.questions)
     : [];
+  const generatesQuestions = previewData?.generate_questions !== false;
 
   const [edits, setEdits] = useState<Record<number, { cat?: string; q?: string; a?: string; _deleted?: boolean }>>({});
 
@@ -85,6 +88,17 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
         </Text>
 
         <ScrollView style={styles.list}>
+          <View style={[styles.documentPreviewCard, { backgroundColor: surface }]}>
+            <Text style={[styles.documentPreviewTitle, { color: c }]}>{"\u539f\u6587\u9884\u89c8"}</Text>
+            {!generatesQuestions ? (
+              <Text style={[styles.documentPreviewHint, { color: colors.textSecondary }]}>{"\u786e\u8ba4\u540e\u5c06\u4ec5\u4fdd\u5b58\u539f\u6587\u6863\uff0c\u4e0d\u751f\u6210\u9898\u76ee\u3002"}</Text>
+            ) : null}
+            <Text style={[styles.documentContent, { color: c }]}>{previewData.content || "\u672a\u80fd\u83b7\u53d6\u539f\u6587\u5185\u5bb9\u3002"}</Text>
+          </View>
+
+          {generatesQuestions ? (
+            <Text style={[styles.questionPreviewTitle, { color: c }]}>{"\u751f\u6210\u7684\u9898\u76ee"}</Text>
+          ) : null}
           {previewData.categories.map((cat) => (
             <View key={cat.cat}>
               <Text style={[styles.catTitle, { color: colors.primary }]}>
@@ -152,6 +166,11 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: "600" },
   fileName: { fontSize: 12, paddingHorizontal: 16, paddingBottom: 8 },
   list: { flex: 1, paddingHorizontal: 16 },
+  documentPreviewCard: { borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8 },
+  documentPreviewTitle: { fontSize: 16, fontWeight: "700", marginBottom: 6 },
+  documentPreviewHint: { fontSize: 13, lineHeight: 20, marginBottom: 10 },
+  documentContent: { fontSize: 14, lineHeight: 22 },
+  questionPreviewTitle: { fontSize: 16, fontWeight: "700", marginTop: 12 },
   catTitle: { fontSize: 16, fontWeight: "700", marginTop: 12, marginBottom: 4 },
   qCard: { borderRadius: 10, padding: 14, marginBottom: 12 },
   qHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },

@@ -72,6 +72,9 @@ export async function getDb(): Promise<any> {
   if (!questionColumns.some((column) => column.name === "source_document_id")) {
     await db.execAsync("ALTER TABLE questions ADD COLUMN source_document_id TEXT DEFAULT NULL");
   }
+  if (!questionColumns.some((column) => column.name === "tags")) {
+    await db.execAsync("ALTER TABLE questions ADD COLUMN tags TEXT DEFAULT '[]'");
+  }
 
   const studyRecordColumns: { name: string }[] = await db.getAllAsync("PRAGMA table_info(study_records)");
   if (!studyRecordColumns.some((column) => column.name === "new_count")) {

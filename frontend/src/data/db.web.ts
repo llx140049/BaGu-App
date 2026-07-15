@@ -342,6 +342,16 @@ function createInMemoryDb() {
         }
       }
 
+      if (upper.includes("UPDATE QUESTIONS SET CAT = ?, TAGS = ?, Q = ?, A = ? WHERE ID = ?") && params) {
+        const question = findQuestionById(params[4]);
+        if (question) {
+          question.cat = params[0];
+          question.tags = params[1];
+          question.q = params[2];
+          question.a = params[3];
+        }
+      }
+
       if (upper.includes("UPDATE QUESTIONS SET CAT = ?, Q = ?, A = ? WHERE ID = ?") && params) {
         const question = findQuestionById(params[3]);
         if (question) {

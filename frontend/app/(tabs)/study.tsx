@@ -7,6 +7,7 @@ import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { isCardDue, reviewCard } from "../../src/data/sm2";
+import { cardHasTag, parseQuestionTags } from "../../src/data/tagging";
 
 type StudyScope = "all" | "mistakes" | "starred" | "due" | "review" | "new";
 type SwipeAction = "unfamiliar" | "mastered" | "favorite";
@@ -42,11 +43,11 @@ export default function StudyScreen() {
     setLoading(true);
     const database = await getDb();
     const query = documentId
-      ? `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) AS level, COALESCE(cp.correct, 0) AS correct, COALESCE(cp.incorrect, 0) AS incorrect, cp.last_review AS lastReview, cp.next_review AS nextReview, COALESCE(cp.is_starred, 0) AS isStarred FROM questions q LEFT JOIN card_progress cp ON q.id = cp.question_id WHERE q.source_document_id = ?`
-      : `SELECT q.id, q.cat, q.q, q.a, COALESCE(cp.level, 0) AS level, COALESCE(cp.correct, 0) AS correct, COALESCE(cp.incorrect, 0) AS incorrect, cp.last_review AS lastReview, cp.next_review AS nextReview, COALESCE(cp.is_starred, 0) AS isStarred FROM questions q LEFT JOIN card_progress cp ON q.id = cp.question_id`;
+      ? `SELECT q.id, q.cat, q.tags, q.q, q.a, COALESCE(cp.level, 0) AS level, COALESCE(cp.correct, 0) AS correct, COALESCE(cp.incorrect, 0) AS incorrect, cp.last_review AS lastReview, cp.next_review AS nextReview, COALESCE(cp.is_starred, 0) AS isStarred FROM questions q LEFT JOIN card_progress cp ON q.id = cp.question_id WHERE q.source_document_id = ?`
+      : `SELECT q.id, q.cat, q.tags, q.q, q.a, COALESCE(cp.level, 0) AS level, COALESCE(cp.correct, 0) AS correct, COALESCE(cp.incorrect, 0) AS incorrect, cp.last_review AS lastReview, cp.next_review AS nextReview, COALESCE(cp.is_starred, 0) AS isStarred FROM questions q LEFT JOIN card_progress cp ON q.id = cp.question_id`;
     const rows: any[] = await database.getAllAsync(query, documentId ? [documentId] : undefined);
-    const mapped: Card[] = rows.map((row) => ({ id: row.id, cat: row.cat, q: row.q, a: row.a, level: row.level, correct: row.correct, incorrect: row.incorrect, lastReview: row.lastReview ?? undefined, nextReview: row.nextReview ?? undefined, isStarred: Boolean(row.isStarred) }));
-    const topicCards = topic ? mapped.filter((card) => card.cat === topic || card.cat.startsWith(`${topic}/`)) : mapped;
+    const mapped = rows.map((row) => ({ id: row.id, cat: row.cat, q: row.q, a: row.a, level: row.level, correct: row.correct, incorrect: row.incorrect, lastReview: row.lastReview ?? undefined, nextReview: row.nextReview ?? undefined, isStarred: Boolean(row.isStarred), tagPaths: parseQuestionTags(row.tags, row.cat) }));
+    const topicCards = Array.from(new Map((topic ? mapped.filter((card) => cardHasTag(card.tagPaths, topic)) : mapped).map((card) => [card.id, card])).values());
     const scoped = scopeCards(topicCards, scope, limit);
     setCards(questionId ? scoped.filter((card) => card.id === questionId) : scoped);
     setCurrentIndex(0);

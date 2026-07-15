@@ -93,6 +93,10 @@ export async function getDb(): Promise<any> {
 }
 
 export async function insertSampleData() {
+  // New installations start with an empty library. Existing local data is
+  // intentionally left untouched so user-created questions are never removed.
+  return;
+
   const database = await getDb();
 
   const row: any = await database.getFirstAsync("SELECT COUNT(*) as cnt FROM questions");

@@ -5,7 +5,7 @@ import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb, insertSampleData } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
-import { uploadApi } from "../../src/services/api";
+import { uploadApi, syncApi } from "../../src/services/api";
 import FilePicker from "../../src/components/FilePicker";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 import QuestionEditor, { EditableQuestion } from "../../src/components/QuestionEditor";
@@ -33,6 +33,10 @@ export default function QuestionsScreen() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [editingQuestion, setEditingQuestion] = useState<QItem | null>(null);
   const [showQuestionEditor, setShowQuestionEditor] = useState(false);
+  const [selectingDocuments, setSelectingDocuments] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
+  const [selectingQuestions, setSelectingQuestions] = useState(false);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     await insertSampleData();
@@ -163,6 +167,107 @@ export default function QuestionsScreen() {
     ]);
   };
 
+  const toggleDocumentSelection = (documentId: string) => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(documentId)) next.delete(documentId);
+      else next.add(documentId);
+      return next;
+    });
+  };
+
+  const stopSelectingDocuments = () => {
+    setSelectingDocuments(false);
+    setSelectedDocumentIds(new Set());
+  };
+
+  const deleteSelectedDocuments = async (deleteRelatedQuestions: boolean) => {
+    const documentIds = Array.from(selectedDocumentIds);
+    if (documentIds.length === 0) return;
+
+    try {
+      await syncApi.deleteDocuments(documentIds, deleteRelatedQuestions);
+      const database = await getDb();
+      for (const documentId of documentIds) {
+        const relatedQuestions: { id: string }[] = await database.getAllAsync(
+          "SELECT id FROM questions WHERE source_document_id = ?",
+          [documentId]
+        );
+        if (deleteRelatedQuestions) {
+          for (const question of relatedQuestions) {
+            await database.runAsync("DELETE FROM card_progress WHERE question_id = ?", [question.id]);
+            await database.runAsync("DELETE FROM questions WHERE id = ?", [question.id]);
+          }
+        } else {
+          await database.runAsync("UPDATE questions SET source_document_id = NULL WHERE source_document_id = ?", [documentId]);
+        }
+        await database.runAsync("DELETE FROM documents WHERE id = ?", [documentId]);
+      }
+      stopSelectingDocuments();
+      await loadData();
+    } catch (e: any) {
+      Alert.alert("\u5220\u9664\u5931\u8d25", e.message || "\u8bf7\u91cd\u8bd5");
+    }
+  };
+
+  const confirmBatchDelete = () => {
+    const count = selectedDocumentIds.size;
+    if (count === 0) return;
+    Alert.alert(
+      "\u5220\u9664\u6587\u6863",
+      `\u5df2\u9009\u62e9 ${count} \u4e2a\u6587\u6863\u3002\u662f\u5426\u4e00\u8d77\u5220\u9664\u5173\u8054\u9898\u76ee\uff1f`,
+      [
+        { text: "\u53d6\u6d88", style: "cancel" },
+        { text: "\u4fdd\u7559\u5173\u8054\u9898\u76ee", style: "destructive", onPress: () => deleteSelectedDocuments(false) },
+        { text: "\u540c\u65f6\u5220\u9664\u9898\u76ee", style: "destructive", onPress: () => deleteSelectedDocuments(true) },
+      ]
+    );
+  };
+
+  const toggleQuestionSelection = (questionId: string) => {
+    setSelectedQuestionIds((current) => {
+      const next = new Set(current);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      return next;
+    });
+  };
+
+  const stopSelectingQuestions = () => {
+    setSelectingQuestions(false);
+    setSelectedQuestionIds(new Set());
+  };
+
+  const deleteSelectedQuestions = async () => {
+    const questionIds = Array.from(selectedQuestionIds);
+    if (questionIds.length === 0) return;
+    try {
+      await syncApi.deleteQuestions(questionIds);
+      const database = await getDb();
+      for (const questionId of questionIds) {
+        await database.runAsync("DELETE FROM card_progress WHERE question_id = ?", [questionId]);
+        await database.runAsync("DELETE FROM questions WHERE id = ?", [questionId]);
+      }
+      stopSelectingQuestions();
+      await loadData();
+    } catch (e: any) {
+      Alert.alert("\u5220\u9664\u5931\u8d25", e.message || "\u8bf7\u68c0\u67e5\u767b\u5f55\u72b6\u6001\u548c\u7f51\u7edc");
+    }
+  };
+
+  const confirmQuestionDelete = () => {
+    const count = selectedQuestionIds.size;
+    if (count === 0) return;
+    Alert.alert(
+      "\u5220\u9664\u9898\u76ee",
+      `\u5df2\u9009\u62e9 ${count} \u9053\u9898\u76ee\uff0c\u5bf9\u5e94\u5b66\u4e60\u8fdb\u5ea6\u4e5f\u4f1a\u4e00\u5e76\u5220\u9664\u3002`,
+      [
+        { text: "\u53d6\u6d88", style: "cancel" },
+        { text: "\u5220\u9664", style: "destructive", onPress: deleteSelectedQuestions },
+      ]
+    );
+  };
+
   const filteredQuestions = questions.filter((question) => {
     if (sourceFilter === "document") return Boolean(question.source_document_id);
     if (sourceFilter === "standalone") return !question.source_document_id;
@@ -170,7 +275,7 @@ export default function QuestionsScreen() {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg }]}> 
       <View style={styles.titleRow}>
         <TouchableOpacity style={[styles.menuButton, { backgroundColor: surface }]} onPress={() => setShowLibraryMenu(true)} accessibilityLabel="打开知识库侧边栏">
           <Text style={[styles.menuIcon, { color: c }]}>☰</Text>
@@ -194,7 +299,8 @@ export default function QuestionsScreen() {
             ))}
           </View>
           <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: colors.primary }]}
+            style={[styles.addButton, { backgroundColor: colors.primary }, selectingQuestions && styles.hiddenAddButton]}
+            disabled={selectingQuestions}
             onPress={() => { setEditingQuestion(null); setShowQuestionEditor(true); }}
           >
             <Text style={styles.addButtonText}>+ 新增</Text>
@@ -211,9 +317,16 @@ export default function QuestionsScreen() {
           ) : filteredQuestions.map((question) => (
             <TouchableOpacity
               key={question.id}
-              style={[styles.qCard, { backgroundColor: surface }]}
-              onPress={() => { setEditingQuestion(question); setShowQuestionEditor(true); }}
+              style={[styles.qCard, { backgroundColor: surface }, selectingQuestions && selectedQuestionIds.has(question.id) && styles.selectedQuestionCard]}
+              onPress={() => selectingQuestions ? toggleQuestionSelection(question.id) : (() => { setEditingQuestion(question); setShowQuestionEditor(true); })()}
+              onLongPress={() => {
+                if (!selectingQuestions) {
+                  setSelectingQuestions(true);
+                  setSelectedQuestionIds(new Set([question.id]));
+                }
+              }}
             >
+              {selectingQuestions ? <Text style={[styles.questionSelectionMark, { color: selectedQuestionIds.has(question.id) ? colors.primary : colors.textTertiary }]}>{selectedQuestionIds.has(question.id) ? "\u25c9" : "\u25cb"}</Text> : null}
               <Text style={[styles.qCat, { color: colors.primary }]}>{question.cat}</Text>
               <Text style={[styles.qText, { color: c }]} numberOfLines={3}>{question.q}</Text>
               <Text style={[styles.qSource, { color: colors.textTertiary }]}>{question.source_document_id ? "关联文档题目" : "独立题目"}</Text>
@@ -237,16 +350,23 @@ export default function QuestionsScreen() {
           docs.map((doc) => (
             <TouchableOpacity
               key={doc.id}
-              style={[styles.docCard, { backgroundColor: surface }]}
+              style={[styles.docCard, { backgroundColor: surface }, selectingDocuments && selectedDocumentIds.has(doc.id) && styles.selectedDocCard]}
               activeOpacity={0.8}
-              onPress={() => router.push({ pathname: "/(tabs)/doc-reader", params: { id: doc.id } })}
+              onPress={() => selectingDocuments ? toggleDocumentSelection(doc.id) : router.push({ pathname: "/(tabs)/doc-reader", params: { id: doc.id } })}
+              onLongPress={() => {
+                if (!selectingDocuments) {
+                  setSelectingDocuments(true);
+                  setSelectedDocumentIds(new Set([doc.id]));
+                }
+              }}
             >
               <View style={styles.docHeader}>
+                {selectingDocuments ? <Text style={[styles.selectionMark, { color: selectedDocumentIds.has(doc.id) ? colors.primary : colors.textTertiary }]}>{selectedDocumentIds.has(doc.id) ? "\u25c9" : "\u25cb"}</Text> : null}
                 <Text style={[styles.docCat, { color: colors.primary }]}>{doc.cat}</Text>
                 <Text style={[styles.docSource, { color: colors.textTertiary }]}>{doc.source}</Text>
                 <TouchableOpacity
                   style={[styles.practiceLink, { backgroundColor: doc.questionCount > 0 ? colors.primaryLight : colors.border }]}
-                  disabled={doc.questionCount === 0}
+                  disabled={doc.questionCount === 0 || selectingDocuments}
                   onPress={() => router.push({ pathname: "/(tabs)/study", params: { documentId: doc.id, documentTitle: doc.title } })}
                 >
                   <Text style={[styles.practiceLinkText, { color: doc.questionCount > 0 ? colors.primary : colors.textTertiary }]}>关联题库</Text>
@@ -262,9 +382,41 @@ export default function QuestionsScreen() {
         <View style={{ height: 32 }} />
       </ScrollView> : null}
 
-      {activeTab === "knowledge" && !uploading ? (
+      {activeTab === "knowledge" && !uploading && !selectingDocuments ? (
         <View style={styles.floatingUpload}>
           <FilePicker onFileSelected={handleFileSelected} label="＋" isDark={isDark} floating />
+        </View>
+      ) : null}
+
+      {activeTab === "knowledge" && selectingDocuments ? (
+        <View style={[styles.batchActionBar, { backgroundColor: surface }]}> 
+          <TouchableOpacity onPress={stopSelectingDocuments}>
+            <Text style={[styles.batchCancel, { color: colors.textSecondary }]}>{"\u53d6\u6d88"}</Text>
+          </TouchableOpacity>
+          <Text style={[styles.batchCount, { color: c }]}>{`\u5df2\u9009 ${selectedDocumentIds.size} \u4e2a`}</Text>
+          <TouchableOpacity
+            style={[styles.batchDeleteButton, selectedDocumentIds.size === 0 && { backgroundColor: colors.border }]}
+            disabled={selectedDocumentIds.size === 0}
+            onPress={confirmBatchDelete}
+          >
+            <Text style={styles.batchDeleteText}>{"\u5220\u9664"}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {activeTab === "questions" && selectingQuestions ? (
+        <View style={[styles.batchActionBar, { backgroundColor: surface }]}> 
+          <TouchableOpacity onPress={stopSelectingQuestions}>
+            <Text style={[styles.batchCancel, { color: colors.textSecondary }]}>{"\u53d6\u6d88"}</Text>
+          </TouchableOpacity>
+          <Text style={[styles.batchCount, { color: c }]}>{`\u5df2\u9009 ${selectedQuestionIds.size} \u9053`}</Text>
+          <TouchableOpacity
+            style={[styles.batchDeleteButton, selectedQuestionIds.size === 0 && { backgroundColor: colors.border }]}
+            disabled={selectedQuestionIds.size === 0}
+            onPress={confirmQuestionDelete}
+          >
+            <Text style={styles.batchDeleteText}>{"\u5220\u9664"}</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
@@ -314,6 +466,7 @@ const styles = StyleSheet.create({
   filterButton: { borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
   filterText: { fontSize: 12, fontWeight: "600" },
   addButton: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  hiddenAddButton: { opacity: 0 },
   addButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   uploadingCard: { borderRadius: 10, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 12 },
   uploadingText: { fontSize: 13 },
@@ -322,11 +475,15 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16 },
   emptySubtext: { fontSize: 13, marginTop: 6 },
   qCard: { borderRadius: 10, padding: 14, marginBottom: 8 },
+  selectedQuestionCard: { borderWidth: 2, borderColor: colors.primary },
+  questionSelectionMark: { position: "absolute", top: 12, right: 12, fontSize: 20, lineHeight: 20 },
   qCat: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
   qText: { fontSize: 14, lineHeight: 20 },
   qSource: { fontSize: 11, marginTop: 6 },
   docCard: { borderRadius: 12, padding: 18, marginBottom: 10 },
   docHeader: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 6 },
+  selectedDocCard: { borderWidth: 2, borderColor: colors.primary },
+  selectionMark: { fontSize: 20, lineHeight: 20 },
   docCat: { fontSize: 11, fontWeight: "600", backgroundColor: "#e8ece4", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, overflow: "hidden" },
   docSource: { fontSize: 11 },
   practiceLink: { marginLeft: "auto", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 },
@@ -337,6 +494,11 @@ const styles = StyleSheet.create({
   readingTrack: { height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: "hidden", marginBottom: 10 },
   readingFill: { height: "100%", borderRadius: 2, backgroundColor: colors.primary },
   floatingUpload: { position: "absolute", right: 24, bottom: 24 },
+  batchActionBar: { position: "absolute", left: 24, right: 24, bottom: 24, borderRadius: 12, padding: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
+  batchCancel: { fontSize: 14, fontWeight: "600" },
+  batchCount: { fontSize: 14, fontWeight: "600" },
+  batchDeleteButton: { backgroundColor: colors.danger, borderRadius: 8, paddingHorizontal: 18, paddingVertical: 9 },
+  batchDeleteText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   drawerBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
   drawer: { width: "72%", height: "100%", paddingTop: 64, paddingHorizontal: 20 },
   drawerTitle: { fontSize: 22, fontWeight: "700", marginBottom: 20 },

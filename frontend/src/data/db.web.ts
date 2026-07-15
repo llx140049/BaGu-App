@@ -1,4 +1,3 @@
-import { SAMPLE_DOCUMENTS } from "./sample-docs";
 import { genId } from "./utils";
 import { MASTERED_LEVEL } from "./sm2";
 
@@ -437,12 +436,6 @@ function createInMemoryDb() {
 export async function getDb(): Promise<any> {
   if (instance) return instance;
   instance = createInMemoryDb();
-  for (const doc of SAMPLE_DOCUMENTS) {
-    await instance.runAsync(
-      "INSERT INTO documents (id, title, cat, content, source) VALUES (?, ?, ?, ?, ?)",
-      [genId(), doc.title, doc.cat, doc.content, doc.source]
-    );
-  }
   return instance;
 }
 

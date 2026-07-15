@@ -105,6 +105,22 @@ export const progressApi = {
     }),
 };
 
+export const syncApi = {
+  deleteDocuments: (documentIds: string[], deleteRelatedQuestions: boolean) =>
+    request("/api/v1/sync/delete-documents", {
+      method: "POST",
+      body: JSON.stringify({
+        document_ids: documentIds,
+        delete_related_questions: deleteRelatedQuestions,
+      }),
+    }),
+  deleteQuestions: (questionIds: string[]) =>
+    request("/api/v1/sync/delete-questions", {
+      method: "POST",
+      body: JSON.stringify({ question_ids: questionIds }),
+    }),
+};
+
 export const statsApi = {
   overview: () => request<any>("/api/v1/stats/overview"),
   calendar: () => request<any[]>("/api/v1/stats/calendar"),
@@ -112,4 +128,4 @@ export const statsApi = {
   compare: () => request<any>("/api/v1/stats/compare"),
 };
 
-export default { authApi, questionsApi, uploadApi, progressApi, statsApi };
+export default { authApi, questionsApi, uploadApi, progressApi, syncApi, statsApi };

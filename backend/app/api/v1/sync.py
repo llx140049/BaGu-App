@@ -2,11 +2,11 @@
 import os, json
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.core.security import get_current_user
 from app.core.database import get_db
-from app.models.question import Document
+from app.models.question import Document, Question
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
@@ -50,6 +50,15 @@ class SyncPullResponse(BaseModel):
     settings: dict
     study_records: list[dict]
     synced_at: str
+
+
+class DeleteDocumentsRequest(BaseModel):
+    document_ids: list[str]
+    delete_related_questions: bool = False
+
+
+class DeleteQuestionsRequest(BaseModel):
+    question_ids: list[str]
 
 @router.post("/push")
 async def sync_push(
@@ -132,3 +141,106 @@ async def sync_pull(user_id: str = Depends(get_current_user)):
         study_records=study_records,
         synced_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.post("/delete-documents")
+async def delete_synced_documents(
+    body: DeleteDocumentsRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        document_ids = [UUID(document_id) for document_id in set(body.document_ids)]
+        owner_id = UUID(user_id)
+    except ValueError as exc:
+        raise HTTPException(400, detail="Invalid document id") from exc
+
+    if not document_ids:
+        return {"deleted_documents": 0, "deleted_questions": 0}
+
+    documents = list(await db.scalars(
+        select(Document).where(Document.user_id == owner_id, Document.id.in_(document_ids))
+    ))
+    existing_document_ids = {str(document.id) for document in documents}
+    questions = list(await db.scalars(
+        select(Question).where(Question.user_id == owner_id, Question.source_document_id.in_(document_ids))
+    ))
+
+    if body.delete_related_questions:
+        for question in questions:
+            await db.delete(question)
+    else:
+        for question in questions:
+            question.source_document_id = None
+
+    for document in documents:
+        await db.delete(document)
+    await db.commit()
+
+    user_directory = _user_dir(user_id)
+    document_id_strings = {str(document_id) for document_id in document_ids}
+    document_store = _read_json(user_directory / DOCUMENTS_FILE)
+    for document_id in document_id_strings:
+        document_store.pop(document_id, None)
+    _write_json(user_directory / DOCUMENTS_FILE, document_store)
+
+    question_store = _read_json(user_directory / QUESTIONS_FILE)
+    removed_question_ids: set[str] = set()
+    for question_id, question in list(question_store.items()):
+        if question.get("source_document_id") not in document_id_strings:
+            continue
+        if body.delete_related_questions:
+            removed_question_ids.add(question_id)
+            question_store.pop(question_id, None)
+        else:
+            question["source_document_id"] = None
+            question["source_document_ids"] = []
+    _write_json(user_directory / QUESTIONS_FILE, question_store)
+
+    if body.delete_related_questions:
+        progress_store = _read_json(user_directory / PROGRESS_FILE)
+        for question_id in removed_question_ids:
+            progress_store.pop(question_id, None)
+        _write_json(user_directory / PROGRESS_FILE, progress_store)
+
+    return {
+        "deleted_documents": len(existing_document_ids),
+        "deleted_questions": len(questions) if body.delete_related_questions else 0,
+    }
+
+
+@router.post("/delete-questions")
+async def delete_synced_questions(
+    body: DeleteQuestionsRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        question_ids = [UUID(question_id) for question_id in set(body.question_ids)]
+        owner_id = UUID(user_id)
+    except ValueError as exc:
+        raise HTTPException(400, detail="Invalid question id") from exc
+
+    if not question_ids:
+        return {"deleted_questions": 0}
+
+    questions = list(await db.scalars(
+        select(Question).where(Question.user_id == owner_id, Question.id.in_(question_ids))
+    ))
+    for question in questions:
+        await db.delete(question)
+    await db.commit()
+
+    user_directory = _user_dir(user_id)
+    question_id_strings = {str(question_id) for question_id in question_ids}
+    question_store = _read_json(user_directory / QUESTIONS_FILE)
+    for question_id in question_id_strings:
+        question_store.pop(question_id, None)
+    _write_json(user_directory / QUESTIONS_FILE, question_store)
+
+    progress_store = _read_json(user_directory / PROGRESS_FILE)
+    for question_id in question_id_strings:
+        progress_store.pop(question_id, None)
+    _write_json(user_directory / PROGRESS_FILE, progress_store)
+
+    return {"deleted_questions": len(questions)}

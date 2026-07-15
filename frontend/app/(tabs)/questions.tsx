@@ -15,6 +15,27 @@ interface QItem extends EditableQuestion { id: string; source_document_id?: stri
 type Tab = "questions" | "knowledge";
 type SourceFilter = "all" | "document" | "standalone";
 
+const categoryParts = (category?: string) => {
+  const parts = (category || "").split("/").map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : ["\u672a\u5206\u7c7b"];
+};
+
+const isInDirectory = (category: string, directory: string[]) => {
+  const parts = categoryParts(category);
+  return parts.length === directory.length && directory.every((part, index) => parts[index] === part);
+};
+
+const childDirectories = (categories: string[], directory: string[]) => {
+  const children = new Set<string>();
+  for (const category of categories) {
+    const parts = categoryParts(category);
+    if (directory.every((part, index) => parts[index] === part) && parts.length > directory.length) {
+      children.add(parts[directory.length]);
+    }
+  }
+  return Array.from(children).sort((a, b) => a.localeCompare(b, "zh-CN"));
+};
+
 export default function QuestionsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -37,6 +58,8 @@ export default function QuestionsScreen() {
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [selectingQuestions, setSelectingQuestions] = useState(false);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
+  const [documentDirectory, setDocumentDirectory] = useState<string[]>([]);
+  const [questionDirectory, setQuestionDirectory] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
     await insertSampleData();
@@ -83,12 +106,13 @@ export default function QuestionsScreen() {
     }
   };
 
-  const handleConfirm = async (edits: any[]) => {
+  const handleConfirm = async (edits: any[], category: string) => {
     if (!previewData) return;
     try {
       const result: any = await uploadApi.confirm({
         preview_token: previewData.preview_token,
         edits,
+        category,
       });
 
       const database = await getDb();
@@ -100,7 +124,7 @@ export default function QuestionsScreen() {
         [
           result.document_id,
           result.file_name,
-          "导入文档",
+          result.category || category,
           result.content || generatedQuestionSummary || `来自 ${result.file_name} 的题库导入结果`,
           "AI 导入",
           new Date().toISOString(),
@@ -273,6 +297,12 @@ export default function QuestionsScreen() {
     if (sourceFilter === "standalone") return !question.source_document_id;
     return true;
   });
+  const documentFolders = childDirectories(docs.map((doc) => doc.cat), documentDirectory);
+  const documentsInDirectory = docs.filter((doc) => isInDirectory(doc.cat, documentDirectory));
+  const questionFolders = childDirectories(filteredQuestions.map((question) => question.cat), questionDirectory);
+  const questionsInDirectory = filteredQuestions.filter((question) => isInDirectory(question.cat, questionDirectory));
+  const knownCategories = Array.from(new Set([...docs, ...questions].map((item) => item.cat).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}> 
@@ -309,12 +339,36 @@ export default function QuestionsScreen() {
       ) : null}
 
       {activeTab === "questions" ? (
+        <View style={styles.directoryBar}>
+          {questionDirectory.length > 0 ? (
+            <TouchableOpacity onPress={() => setQuestionDirectory((path) => path.slice(0, -1))}>
+              <Text style={[styles.directoryBack, { color: colors.primary }]}>{"\u2190 \u8fd4\u56de"}</Text>
+            </TouchableOpacity>
+          ) : null}
+          <Text style={[styles.directoryPath, { color: colors.textSecondary }]}>
+            {questionDirectory.length > 0 ? questionDirectory.join(" / ") : "\u5168\u90e8\u76ee\u5f55"}
+          </Text>
+        </View>
+      ) : null}
+
+      {activeTab === "questions" ? (
         <ScrollView style={styles.listArea}>
-          {filteredQuestions.length === 0 ? (
+          {questionFolders.map((folder) => (
+            <TouchableOpacity
+              key={folder}
+              style={[styles.folderCard, { backgroundColor: surface }]}
+              onPress={() => setQuestionDirectory((path) => [...path, folder])}
+            >
+              <Text style={styles.folderIcon}>{"\ud83d\udcc1"}</Text>
+              <Text style={[styles.folderName, { color: c }]}>{folder}</Text>
+              <Text style={[styles.folderArrow, { color: colors.textTertiary }]}>{"\u203a"}</Text>
+            </TouchableOpacity>
+          ))}
+          {questionFolders.length === 0 && questionsInDirectory.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: surface }]}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>暂无题目</Text>
             </View>
-          ) : filteredQuestions.map((question) => (
+          ) : questionsInDirectory.map((question) => (
             <TouchableOpacity
               key={question.id}
               style={[styles.qCard, { backgroundColor: surface }, selectingQuestions && selectedQuestionIds.has(question.id) && styles.selectedQuestionCard]}
@@ -341,13 +395,37 @@ export default function QuestionsScreen() {
         </View>
       ) : null}
 
+      {activeTab === "knowledge" ? (
+        <View style={styles.directoryBar}>
+          {documentDirectory.length > 0 ? (
+            <TouchableOpacity onPress={() => setDocumentDirectory((path) => path.slice(0, -1))}>
+              <Text style={[styles.directoryBack, { color: colors.primary }]}>{"\u2190 \u8fd4\u56de"}</Text>
+            </TouchableOpacity>
+          ) : null}
+          <Text style={[styles.directoryPath, { color: colors.textSecondary }]}>
+            {documentDirectory.length > 0 ? documentDirectory.join(" / ") : "\u5168\u90e8\u76ee\u5f55"}
+          </Text>
+        </View>
+      ) : null}
+
       {activeTab === "knowledge" ? <ScrollView style={styles.listArea}>
-        {docs.length === 0 ? (
+        {documentFolders.map((folder) => (
+          <TouchableOpacity
+            key={folder}
+            style={[styles.folderCard, { backgroundColor: surface }]}
+            onPress={() => setDocumentDirectory((path) => [...path, folder])}
+          >
+            <Text style={styles.folderIcon}>{"\ud83d\udcc1"}</Text>
+            <Text style={[styles.folderName, { color: c }]}>{folder}</Text>
+            <Text style={[styles.folderArrow, { color: colors.textTertiary }]}>{"\u203a"}</Text>
+          </TouchableOpacity>
+        ))}
+        {documentFolders.length === 0 && documentsInDirectory.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: surface }]}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>知识库为空</Text>
           </View>
         ) : (
-          docs.map((doc) => (
+          documentsInDirectory.map((doc) => (
             <TouchableOpacity
               key={doc.id}
               style={[styles.docCard, { backgroundColor: surface }, selectingDocuments && selectedDocumentIds.has(doc.id) && styles.selectedDocCard]}
@@ -440,6 +518,7 @@ export default function QuestionsScreen() {
         previewData={previewData}
         onConfirm={handleConfirm}
         uploading={false}
+        directoryOptions={knownCategories}
       />
       <QuestionEditor
         visible={showQuestionEditor}
@@ -447,6 +526,7 @@ export default function QuestionsScreen() {
         onClose={() => { setShowQuestionEditor(false); setEditingQuestion(null); }}
         onSave={saveQuestion}
         onDelete={editingQuestion ? deleteQuestion : undefined}
+        categories={knownCategories}
       />
     </View>
   );
@@ -470,7 +550,14 @@ const styles = StyleSheet.create({
   addButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   uploadingCard: { borderRadius: 10, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 12 },
   uploadingText: { fontSize: 13 },
+  directoryBar: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 28, marginBottom: -2 },
+  directoryBack: { fontSize: 13, fontWeight: "600" },
+  directoryPath: { fontSize: 13 },
   listArea: { flex: 1, marginTop: 8 },
+  folderCard: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 8, flexDirection: "row", alignItems: "center" },
+  folderIcon: { fontSize: 17, marginRight: 10 },
+  folderName: { flex: 1, fontSize: 15, fontWeight: "600" },
+  folderArrow: { fontSize: 24, lineHeight: 24 },
   emptyCard: { borderRadius: 12, padding: 32, alignItems: "center", marginTop: 20 },
   emptyText: { fontSize: 16 },
   emptySubtext: { fontSize: 13, marginTop: 6 },

@@ -351,6 +351,12 @@ function createInMemoryDb() {
         }
       }
 
+      if (upper.includes("UPDATE QUESTIONS SET CAT = ? WHERE SOURCE_DOCUMENT_ID = ?") && params) {
+        for (const question of tables.questions) {
+          if (question.source_document_id === params[1]) question.cat = params[0];
+        }
+      }
+
       if (upper.includes("UPDATE QUESTIONS SET SOURCE_DOCUMENT_ID = NULL WHERE SOURCE_DOCUMENT_ID = ?") && params) {
         for (const question of tables.questions) {
           if (question.source_document_id === params[0]) question.source_document_id = null;
@@ -360,6 +366,11 @@ function createInMemoryDb() {
       if (upper.includes("UPDATE DOCUMENTS SET TITLE = ? WHERE ID = ?") && params) {
         const document = tables.documents.find((row) => row.id === params[1]);
         if (document) document.title = params[0];
+      }
+
+      if (upper.includes("UPDATE DOCUMENTS SET CAT = ? WHERE ID = ?") && params) {
+        const document = tables.documents.find((row) => row.id === params[1]);
+        if (document) document.cat = params[0];
       }
 
       if (upper.includes("UPDATE DOCUMENTS SET SCROLL_OFFSET = ?") && params) {

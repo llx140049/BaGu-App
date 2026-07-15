@@ -3,6 +3,7 @@ import uuid
 import traceback
 from pathlib import Path
 from collections import defaultdict
+from urllib.parse import unquote
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +65,7 @@ async def upload_pdf(
     generate_questions: bool = Form(True),
 ):
     try:
-        filename = file.filename or "untitled"
+        filename = unquote(file.filename or "untitled").replace("\\", "/").split("/")[-1] or "untitled"
         ext = os.path.splitext(filename)[1].lower()
 
         if ext == ".pdf":
@@ -181,12 +182,15 @@ async def confirm_upload(
 
     document = await db.scalar(select(Document).where(Document.id == document_id, Document.user_id == owner_id))
     content = preview["content"]
+    category = "/".join(part.strip() for part in str(body.get("category", "导入文档")).split("/") if part.strip())
+    if not category:
+        category = "导入文档"
     if document is None:
         document = Document(
             id=document_id,
             user_id=owner_id,
             title=preview["file_name"],
-            cat="导入文档",
+            cat=category,
             content=content,
             source="AI 导入",
             source_file_name=preview["file_name"],
@@ -194,7 +198,10 @@ async def confirm_upload(
         db.add(document)
     else:
         document.content = content
+        document.cat = category
     for item in questions:
+        # Keep generated questions in the same directory as their source document.
+        item["cat"] = document.cat
         db.add(
             Question(
                 user_id=owner_id,
@@ -213,6 +220,7 @@ async def confirm_upload(
         "imported": len(questions),
         "document_id": preview["document_id"],
         "file_name": preview["file_name"],
+        "category": document.cat,
         "content": content,
         "questions": questions,
         "generate_questions": preview["generate_questions"],

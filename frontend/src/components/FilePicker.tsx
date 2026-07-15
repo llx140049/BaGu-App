@@ -17,6 +17,16 @@ interface FilePickerProps {
   floating?: boolean;
 }
 
+function readableFileName(name?: string, uri?: string) {
+  const fallback = uri?.split("/").pop() || "untitled";
+  let value = name || fallback;
+  try {
+    value = decodeURIComponent(value);
+  } catch {}
+  const pathParts = value.replace(/\\/g, "/").split("/");
+  return pathParts[pathParts.length - 1] || "untitled";
+}
+
 export default function FilePicker({ onFileSelected, label = "选择文件", floating = false }: FilePickerProps) {
   const [fileName, setFileName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,8 +62,9 @@ export default function FilePicker({ onFileSelected, label = "选择文件", flo
       });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
-      setFileName(file.name);
-      onFileSelected({ uri: file.uri, name: file.name, mimeType: file.mimeType });
+      const name = readableFileName(file.name, file.uri);
+      setFileName(name);
+      onFileSelected({ uri: file.uri, name, mimeType: file.mimeType });
     } catch {
       Alert.alert("选择文件失败", "请重试，或检查应用的文件访问权限。");
     }

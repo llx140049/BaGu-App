@@ -119,6 +119,11 @@ export const syncApi = {
       method: "POST",
       body: JSON.stringify({ question_ids: questionIds }),
     }),
+  updateDocumentCategory: (documentId: string, category: string) =>
+    request("/api/v1/sync/update-document-category", {
+      method: "POST",
+      body: JSON.stringify({ document_id: documentId, category }),
+    }),
 };
 
 export const statsApi = {

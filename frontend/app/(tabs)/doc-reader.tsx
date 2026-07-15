@@ -4,6 +4,8 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal, Tex
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
+import { syncApi } from "../../src/services/api";
+import MarkdownDocument from "../../src/components/MarkdownDocument";
 
 interface DocData {
   id: string;
@@ -111,6 +113,9 @@ export default function DocReaderScreen() {
   const [questionCount, setQuestionCount] = useState(0);
   const [showRename, setShowRename] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
+  const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [draftCategory, setDraftCategory] = useState("");
+  const [directoryOptions, setDirectoryOptions] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestReading = useRef({ offset: 0, progress: 0 });
@@ -129,6 +134,12 @@ export default function DocReaderScreen() {
         [id]
       );
       setQuestionCount(questions.length);
+      const documentCategories: { cat: string }[] = await database.getAllAsync("SELECT cat FROM documents");
+      const questionCategories: { cat: string }[] = await database.getAllAsync("SELECT cat FROM questions");
+      setDirectoryOptions(
+        Array.from(new Set([...documentCategories, ...questionCategories].map((row) => row.cat).filter(Boolean)))
+          .sort((a, b) => a.localeCompare(b, "zh-CN"))
+      );
     })();
   }, [id]);
 
@@ -177,6 +188,27 @@ export default function DocReaderScreen() {
     await database.runAsync("UPDATE documents SET title = ? WHERE id = ?", [title, doc.id]);
     setDoc({ ...doc, title });
     setShowRename(false);
+  };
+
+  const openCategoryEditor = () => {
+    if (!doc) return;
+    setDraftCategory(doc.cat);
+    setShowCategoryEditor(true);
+  };
+
+  const saveCategory = async () => {
+    const category = draftCategory.split("/").map((part) => part.trim()).filter(Boolean).join("/");
+    if (!doc || !category) return;
+    try {
+      await syncApi.updateDocumentCategory(doc.id, category);
+      const database = await getDb();
+      await database.runAsync("UPDATE documents SET cat = ? WHERE id = ?", [category, doc.id]);
+      await database.runAsync("UPDATE questions SET cat = ? WHERE source_document_id = ?", [category, doc.id]);
+      setDoc({ ...doc, cat: category });
+      setShowCategoryEditor(false);
+    } catch (e: any) {
+      Alert.alert("\u4fdd\u5b58\u5931\u8d25", e.message || "\u8bf7\u68c0\u67e5\u767b\u5f55\u72b6\u6001\u548c\u7f51\u7edc");
+    }
   };
 
   const deleteDocument = () => {
@@ -239,6 +271,9 @@ export default function DocReaderScreen() {
         <TouchableOpacity style={s.renameButton} onPress={openRename}>
           <Text style={s.renameText}>重命名</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={s.categoryButton} onPress={openCategoryEditor}>
+          <Text style={s.categoryText}>{"\u6574\u7406\u76ee\u5f55"}</Text>
+        </TouchableOpacity>
         <View style={[s.practiceCard, { backgroundColor: surface }]}>
           <View>
             <Text style={[s.practiceTitle, { color: c }]}>关联题目</Text>
@@ -252,12 +287,51 @@ export default function DocReaderScreen() {
             <Text style={s.practiceButtonText}>开始练习</Text>
           </TouchableOpacity>
         </View>
-        {renderContent(doc.content, isDark)}
+        <MarkdownDocument markdown={doc.content} />
         <TouchableOpacity style={s.deleteButton} onPress={deleteDocument}>
           <Text style={s.deleteText}>删除文档</Text>
         </TouchableOpacity>
         <View style={{ height: 48 }} />
       </ScrollView>
+      <Modal visible={showCategoryEditor} transparent animationType="fade" onRequestClose={() => setShowCategoryEditor(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.renameModal, { backgroundColor: surface }]}>
+            <Text style={[s.modalTitle, { color: c }]}>{"\u6574\u7406\u6587\u6863\u76ee\u5f55"}</Text>
+            <TextInput
+              style={[s.renameInput, { color: c, borderColor: isDark ? colors.borderDark : colors.border }]}
+              value={draftCategory}
+              onChangeText={setDraftCategory}
+              autoFocus
+              placeholder={"\u4f8b\u5982\uff1a\u9ad8\u7b49\u6570\u5b66/\u591a\u5143\u51fd\u6570"}
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+            <Text style={[s.categoryHint, { color: colors.textSecondary }]}>{"\u4f7f\u7528 / \u5206\u9694\u591a\u7ea7\u76ee\u5f55\uff0c\u5173\u8054\u9898\u76ee\u4f1a\u540c\u6b65\u79fb\u52a8\u3002"}</Text>
+            {directoryOptions.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.directoryOptions}>
+                {directoryOptions.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[s.directoryChip, { backgroundColor: draftCategory === category ? colors.primaryLight : (isDark ? "#2a342a" : "#e8ece4") }]}
+                    onPress={() => setDraftCategory(category)}
+                  >
+                    <Text style={[s.directoryChipText, { color: draftCategory === category ? colors.primary : c }]}>{category}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : null}
+            <View style={s.modalActions}>
+              <TouchableOpacity style={s.modalButton} onPress={() => setShowCategoryEditor(false)}>
+                <Text style={[s.cancelText, { color: colors.textSecondary }]}>{"\u53d6\u6d88"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.modalButton, s.saveButton]} onPress={saveCategory}>
+                <Text style={s.saveText}>{"\u4fdd\u5b58"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showRename} transparent animationType="fade" onRequestClose={() => setShowRename(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.renameModal, { backgroundColor: surface }]}>
@@ -298,6 +372,8 @@ const s = StyleSheet.create({
   readingProgress: { fontSize: 12, marginTop: -14, marginBottom: 16 },
   renameButton: { alignSelf: "flex-start", marginTop: -12, marginBottom: 16 },
   renameText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  categoryButton: { alignSelf: "flex-start", marginTop: -10, marginBottom: 16 },
+  categoryText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
   practiceCard: { borderRadius: 12, padding: 14, marginBottom: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   practiceTitle: { fontSize: 15, fontWeight: "600" },
   practiceMeta: { fontSize: 12, marginTop: 4 },
@@ -309,6 +385,10 @@ const s = StyleSheet.create({
   renameModal: { borderRadius: 14, padding: 20 },
   modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 16 },
   renameInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  categoryHint: { fontSize: 12, lineHeight: 18, marginTop: 8 },
+  directoryOptions: { gap: 8, paddingTop: 10, paddingRight: 12 },
+  directoryChip: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
+  directoryChipText: { fontSize: 12, fontWeight: "600" },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 18 },
   modalButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
   saveButton: { backgroundColor: colors.primary },

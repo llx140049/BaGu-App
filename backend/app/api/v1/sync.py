@@ -60,6 +60,11 @@ class DeleteDocumentsRequest(BaseModel):
 class DeleteQuestionsRequest(BaseModel):
     question_ids: list[str]
 
+
+class UpdateDocumentCategoryRequest(BaseModel):
+    document_id: str
+    category: str
+
 @router.post("/push")
 async def sync_push(
     body: SyncPushRequest,
@@ -244,3 +249,47 @@ async def delete_synced_questions(
     _write_json(user_directory / PROGRESS_FILE, progress_store)
 
     return {"deleted_questions": len(questions)}
+
+
+@router.post("/update-document-category")
+async def update_document_category(
+    body: UpdateDocumentCategoryRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    category = body.category.strip()
+    if not category:
+        raise HTTPException(400, detail="Category cannot be empty")
+    try:
+        document_id = UUID(body.document_id)
+        owner_id = UUID(user_id)
+    except ValueError as exc:
+        raise HTTPException(400, detail="Invalid document id") from exc
+
+    document = await db.scalar(
+        select(Document).where(Document.id == document_id, Document.user_id == owner_id)
+    )
+    if document is None:
+        raise HTTPException(404, detail="Document not found")
+
+    document.cat = category
+    questions = list(await db.scalars(
+        select(Question).where(Question.user_id == owner_id, Question.source_document_id == document_id)
+    ))
+    for question in questions:
+        question.cat = category
+    await db.commit()
+
+    user_directory = _user_dir(user_id)
+    document_store = _read_json(user_directory / DOCUMENTS_FILE)
+    if body.document_id in document_store:
+        document_store[body.document_id]["cat"] = category
+    _write_json(user_directory / DOCUMENTS_FILE, document_store)
+
+    question_store = _read_json(user_directory / QUESTIONS_FILE)
+    for question in question_store.values():
+        if question.get("source_document_id") == body.document_id:
+            question["cat"] = category
+    _write_json(user_directory / QUESTIONS_FILE, question_store)
+
+    return {"document_id": body.document_id, "category": category, "updated_questions": len(questions)}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from "react-native";
 import { useThemeStore } from "../store/useThemeStore";
 import { colors } from "../tokens/colors";
@@ -20,11 +20,12 @@ interface UploadPreviewProps {
     content?: string;
     categories: { cat: string; count: number; questions: QuestionItem[] }[];
   } | null;
-  onConfirm: (edits: { index: number; cat?: string; q?: string; a?: string; _deleted?: boolean }[]) => void;
+  onConfirm: (edits: { index: number; cat?: string; q?: string; a?: string; _deleted?: boolean }[], category: string) => void;
   uploading: boolean;
+  directoryOptions?: string[];
 }
 
-export default function UploadPreviewModal({ visible, onClose, previewData, onConfirm, uploading }: UploadPreviewProps) {
+export default function UploadPreviewModal({ visible, onClose, previewData, onConfirm, uploading, directoryOptions = [] }: UploadPreviewProps) {
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
   const bg = isDark ? colors.bgDark : colors.bg;
@@ -38,6 +39,14 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
   const generatesQuestions = previewData?.generate_questions !== false;
 
   const [edits, setEdits] = useState<Record<number, { cat?: string; q?: string; a?: string; _deleted?: boolean }>>({});
+  const [draftCategory, setDraftCategory] = useState("\u5bfc\u5165\u6587\u6863");
+
+  useEffect(() => {
+    if (previewData) {
+      setDraftCategory("\u5bfc\u5165\u6587\u6863");
+      setEdits({});
+    }
+  }, [previewData?.preview_token]);
 
   // Reset edits when new preview data arrives
   if (previewData && Object.keys(edits).length === 0 && allQuestions.length > 0) {
@@ -62,7 +71,9 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
     const editList = Object.entries(edits)
       .filter(([, v]) => v.cat !== undefined || v.q !== undefined || v.a !== undefined || v._deleted !== undefined)
       .map(([idx, v]) => ({ index: parseInt(idx), ...v }));
-    onConfirm(editList);
+    const category = draftCategory.split("/").map((part) => part.trim()).filter(Boolean).join("/");
+    if (!category) return;
+    onConfirm(editList, category);
   };
 
   if (!previewData) return null;
@@ -75,7 +86,7 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
           <TouchableOpacity onPress={onClose}>
             <Text style={[styles.headerBtn, { color: colors.textSecondary }]}>取消</Text>
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: c }]}>AI 生成预览</Text>
+          <Text style={[styles.headerTitle, { color: c }]}>{generatesQuestions ? "AI 生成预览" : "文档导入预览"}</Text>
           <TouchableOpacity onPress={handleConfirm} disabled={uploading}>
             <Text style={[styles.headerBtn, { color: colors.primary, fontWeight: "700" }]}>
               {uploading ? "提交中..." : `确认导入 (${allQuestions.filter((_, i) => !edits[i]?._deleted).length})`}
@@ -88,6 +99,29 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
         </Text>
 
         <ScrollView style={styles.list}>
+          <View style={[styles.directoryEditor, { backgroundColor: surface }]}>
+            <Text style={[styles.directoryLabel, { color: c }]}>{"\u5bfc\u5165\u76ee\u5f55"}</Text>
+            <TextInput
+              style={[styles.directoryInput, { color: c, borderColor: isDark ? colors.borderDark : colors.border }]}
+              value={draftCategory}
+              onChangeText={setDraftCategory}
+              placeholder={"\u4f8b\u5982\uff1a\u9ad8\u7b49\u6570\u5b66/\u5fae\u5206\u5b66"}
+              placeholderTextColor={colors.textTertiary}
+            />
+            {directoryOptions.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.directoryOptions}>
+                {directoryOptions.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[styles.directoryChip, { backgroundColor: draftCategory === category ? colors.primaryLight : (isDark ? "#2a342a" : "#e8ece4") }]}
+                    onPress={() => setDraftCategory(category)}
+                  >
+                    <Text style={[styles.directoryChipText, { color: draftCategory === category ? colors.primary : c }]}>{category}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
           <View style={[styles.documentPreviewCard, { backgroundColor: surface }]}>
             <Text style={[styles.documentPreviewTitle, { color: c }]}>{"\u539f\u6587\u9884\u89c8"}</Text>
             {!generatesQuestions ? (
@@ -166,6 +200,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: "600" },
   fileName: { fontSize: 12, paddingHorizontal: 16, paddingBottom: 8 },
   list: { flex: 1, paddingHorizontal: 16 },
+  directoryEditor: { borderRadius: 10, padding: 14, marginTop: 12 },
+  directoryLabel: { fontSize: 15, fontWeight: "700", marginBottom: 8 },
+  directoryInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14 },
+  directoryOptions: { gap: 8, paddingTop: 10, paddingRight: 12 },
+  directoryChip: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
+  directoryChipText: { fontSize: 12, fontWeight: "600" },
   documentPreviewCard: { borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8 },
   documentPreviewTitle: { fontSize: 16, fontWeight: "700", marginBottom: 6 },
   documentPreviewHint: { fontSize: 13, lineHeight: 20, marginBottom: 10 },

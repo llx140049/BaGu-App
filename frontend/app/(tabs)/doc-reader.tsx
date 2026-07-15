@@ -114,6 +114,7 @@ export default function DocReaderScreen() {
   const [showRename, setShowRename] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const [draftCategory, setDraftCategory] = useState("");
   const [directoryOptions, setDirectoryOptions] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
@@ -171,7 +172,8 @@ export default function DocReaderScreen() {
   }, [doc]);
 
   const startPractice = () => {
-    if (!doc || questionCount === 0) return;
+    if (!doc) return;
+    if (questionCount === 0) { Alert.alert("暂无题目", "这篇文档暂时没有关联题目。"); return; }
     router.push({ pathname: "/(tabs)/study", params: { documentId: doc.id, documentTitle: doc.title } });
   };
 
@@ -242,13 +244,12 @@ export default function DocReaderScreen() {
 
   return (
     <View style={[s.container, { backgroundColor: bg }]}>
-      <View style={[s.header, { backgroundColor: surface }]}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[s.backBtn, { color: colors.primary }]}>← 返回</Text>
-        </TouchableOpacity>
-        <View style={s.headerInfo}>
-          <Text style={[s.catBadge, { color: colors.primary }]}>{doc.cat}</Text>
-          <Text style={[s.sourceText, { color: colors.textTertiary }]}>{doc.source}</Text>
+      <View style={s.header}>
+        <TouchableOpacity accessibilityLabel="返回" style={s.headerButton} onPress={() => router.back()}><Text style={s.backBtn}>{"<"}</Text></TouchableOpacity>
+        <Text numberOfLines={1} style={[s.headerTitle, { color: c }]}>{doc.title}</Text>
+        <View style={s.headerActions}>
+          <TouchableOpacity accessibilityLabel="做题" style={s.headerButton} onPress={startPractice}><Text style={s.practiceGlyph}>▷</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityLabel="更多" style={s.headerButton} onPress={() => setShowMore((visible) => !visible)}><Text style={s.moreGlyph}>•••</Text></TouchableOpacity>
         </View>
       </View>
 
@@ -266,33 +267,17 @@ export default function DocReaderScreen() {
           }
         }}
       >
-        <Text style={[s.docTitle, { color: c }]}>{doc.title}</Text>
-        {doc.reading_progress ? <Text style={[s.readingProgress, { color: colors.textSecondary }]}>已读 {Math.round(doc.reading_progress)}%</Text> : null}
-        <TouchableOpacity style={s.renameButton} onPress={openRename}>
-          <Text style={s.renameText}>重命名</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.categoryButton} onPress={openCategoryEditor}>
-          <Text style={s.categoryText}>{"\u6574\u7406\u76ee\u5f55"}</Text>
-        </TouchableOpacity>
-        <View style={[s.practiceCard, { backgroundColor: surface }]}>
-          <View>
-            <Text style={[s.practiceTitle, { color: c }]}>关联题目</Text>
-            <Text style={[s.practiceMeta, { color: colors.textSecondary }]}>{questionCount} 道题目</Text>
-          </View>
-          <TouchableOpacity
-            style={[s.practiceButton, { backgroundColor: questionCount > 0 ? colors.primary : colors.border }]}
-            disabled={questionCount === 0}
-            onPress={startPractice}
-          >
-            <Text style={s.practiceButtonText}>开始练习</Text>
-          </TouchableOpacity>
-        </View>
         <MarkdownDocument markdown={doc.content} />
-        <TouchableOpacity style={s.deleteButton} onPress={deleteDocument}>
-          <Text style={s.deleteText}>删除文档</Text>
-        </TouchableOpacity>
-        <View style={{ height: 48 }} />
       </ScrollView>
+      {showMore ? <View style={[s.moreMenu, { backgroundColor: surface }]}>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}><Text style={s.moreRowIcon}>☷</Text><Text style={[s.moreRowText, { color: c }]}>目录</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("搜索", "文档内搜索将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⌕</Text><Text style={[s.moreRowText, { color: c }]}>搜索</Text></TouchableOpacity>
+        <View style={s.moreDivider} />
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("分享", "分享功能将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⇧</Text><Text style={[s.moreRowText, { color: c }]}>分享</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("导出", "导出功能将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⇩</Text><Text style={[s.moreRowText, { color: c }]}>导出</Text></TouchableOpacity>
+        <View style={s.moreDivider} />
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("阅读设置", "阅读设置将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⚙</Text><Text style={[s.moreRowText, { color: c }]}>阅读设置</Text></TouchableOpacity>
+      </View> : null}
       <Modal visible={showCategoryEditor} transparent animationType="fade" onRequestClose={() => setShowCategoryEditor(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.renameModal, { backgroundColor: surface }]}>
@@ -361,15 +346,16 @@ export default function DocReaderScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  backBtn: { fontSize: 16, fontWeight: "500" },
-  headerInfo: { flexDirection: "row", alignItems: "center", gap: 8 },
-  catBadge: { fontSize: 12, fontWeight: "600", backgroundColor: "#e8ece4", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, overflow: "hidden" },
-  sourceText: { fontSize: 11 },
+  header: { height: 76, paddingHorizontal: 18, flexDirection: "row", alignItems: "center" },
+  headerButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  backBtn: { color: colors.text, fontSize: 31, fontWeight: "300", lineHeight: 34, marginTop: -2 },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: "600", marginLeft: 3 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  practiceGlyph: { color: colors.text, fontSize: 32, fontWeight: "300", lineHeight: 34 },
+  moreGlyph: { color: colors.text, fontSize: 18, letterSpacing: 1.5 },
   scrollArea: { flex: 1 },
-  scrollContent: { padding: 20 },
-  docTitle: { fontSize: 24, fontWeight: "700", marginBottom: 20, lineHeight: 32 },
-  readingProgress: { fontSize: 12, marginTop: -14, marginBottom: 16 },
+  scrollContent: { paddingHorizontal: 26, paddingTop: 14, paddingBottom: 36 },
+  docTitle: { fontSize: 29, fontWeight: "700", marginBottom: 24, lineHeight: 39 },
   renameButton: { alignSelf: "flex-start", marginTop: -12, marginBottom: 16 },
   renameText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
   categoryButton: { alignSelf: "flex-start", marginTop: -10, marginBottom: 16 },
@@ -381,6 +367,11 @@ const s = StyleSheet.create({
   practiceButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   deleteButton: { marginTop: 20, alignItems: "center", paddingVertical: 12 },
   deleteText: { color: colors.danger, fontSize: 14 },
+  moreMenu: { position: "absolute", top: 70, right: 18, width: 178, borderRadius: 16, paddingVertical: 8, shadowColor: "#171717", shadowOpacity: 0.12, shadowRadius: 20, elevation: 7, zIndex: 10 },
+  moreRow: { minHeight: 48, flexDirection: "row", alignItems: "center", paddingHorizontal: 18 },
+  moreRowIcon: { width: 31, color: colors.text, fontSize: 25, fontWeight: "300" },
+  moreRowText: { fontSize: 16, fontWeight: "500", marginLeft: 8 },
+  moreDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 4, marginHorizontal: 16 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 24 },
   renameModal: { borderRadius: 14, padding: 20 },
   modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 16 },

@@ -3,63 +3,46 @@ import { useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import { colors } from "../tokens/colors";
 
-export interface SelectedFile {
-  uri: string;
-  name: string;
-  bytes?: ArrayBuffer;
-  mimeType?: string;
-}
+export interface SelectedFile { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string; }
 
 interface FilePickerProps {
   onFileSelected: (file: SelectedFile) => void;
   label?: string;
   isDark?: boolean;
   floating?: boolean;
+  iconOnly?: boolean;
 }
 
 function readableFileName(name?: string, uri?: string) {
   const fallback = uri?.split("/").pop() || "untitled";
   let value = name || fallback;
-  try {
-    value = decodeURIComponent(value);
-  } catch {}
-  const pathParts = value.replace(/\\/g, "/").split("/");
-  return pathParts[pathParts.length - 1] || "untitled";
+  try { value = decodeURIComponent(value); } catch {}
+  const parts = value.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || "untitled";
 }
 
-export default function FilePicker({ onFileSelected, label = "选择文件", floating = false }: FilePickerProps) {
+export default function FilePicker({ onFileSelected, label = "选择文件", floating = false, iconOnly = false }: FilePickerProps) {
   const [fileName, setFileName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const buttonStyle = [styles.button, floating && styles.floatingButton, iconOnly && styles.iconOnlyButton, { backgroundColor: iconOnly ? "transparent" : colors.primary }];
+  const labelStyle = [styles.buttonText, iconOnly && styles.iconOnlyText];
 
   if (Platform.OS === "web") {
-    return (
-      <View>
-        <TouchableOpacity style={[styles.btn, floating && styles.floatingButton, { backgroundColor: colors.primary }]} onPress={() => inputRef.current?.click()}>
-          <Text style={styles.btnText}>{fileName || label}</Text>
-        </TouchableOpacity>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,.md,.markdown,.txt"
-          style={{ display: "none" }}
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            setFileName(file.name);
-            onFileSelected({ uri: URL.createObjectURL(file), name: file.name, bytes: await file.arrayBuffer(), mimeType: file.type });
-            event.target.value = "";
-          }}
-        />
-      </View>
-    );
+    return <View>
+      <TouchableOpacity style={buttonStyle} onPress={() => inputRef.current?.click()}><Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text></TouchableOpacity>
+      <input ref={inputRef} type="file" accept=".pdf,.md,.markdown,.txt" style={{ display: "none" }} onChange={async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        setFileName(file.name);
+        onFileSelected({ uri: URL.createObjectURL(file), name: file.name, bytes: await file.arrayBuffer(), mimeType: file.type });
+        event.target.value = "";
+      }} />
+    </View>;
   }
 
   const pickNativeFile = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "text/markdown", "text/plain"],
-        copyToCacheDirectory: true,
-      });
+      const result = await DocumentPicker.getDocumentAsync({ type: ["application/pdf", "text/markdown", "text/plain"], copyToCacheDirectory: true });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
       const name = readableFileName(file.name, file.uri);
@@ -70,19 +53,17 @@ export default function FilePicker({ onFileSelected, label = "选择文件", flo
     }
   };
 
-  return (
-    <View>
-      <TouchableOpacity style={[styles.btn, floating && styles.floatingButton, { backgroundColor: colors.primary }]} onPress={pickNativeFile}>
-        <Text style={styles.btnText}>{fileName || label}</Text>
-      </TouchableOpacity>
-      {!floating ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文件</Text> : null}
-    </View>
-  );
+  return <View>
+    <TouchableOpacity style={buttonStyle} onPress={pickNativeFile}><Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text></TouchableOpacity>
+    {!floating && !iconOnly ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文档</Text> : null}
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  btn: { padding: 14, borderRadius: 10, alignItems: "center" },
+  button: { padding: 14, borderRadius: 10, alignItems: "center" },
   floatingButton: { width: 56, height: 56, borderRadius: 28, padding: 0, justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
-  btnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  iconOnlyButton: { width: 38, height: 38, padding: 0, justifyContent: "center" },
+  buttonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  iconOnlyText: { color: colors.text, fontSize: 32, fontWeight: "300", lineHeight: 36 },
   hint: { fontSize: 12, textAlign: "center", marginTop: 8, lineHeight: 18 },
 });

@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { getDb } from "../../src/data/db";
 import { MASTERED_LEVEL } from "../../src/data/sm2";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
+import { BackButton } from "../../src/components/PrototypeUI";
 
 type HeatmapRange = "week" | "month";
 
@@ -67,6 +68,7 @@ function buildHeatmap(activity: StatsData["activity"], range: HeatmapRange) {
 }
 
 export default function StatsScreen() {
+  const router = useRouter();
   const theme = useThemeStore((state) => state.theme);
   const isDark = theme === "dark";
   const textColor = isDark ? colors.textDark : colors.text;
@@ -133,7 +135,7 @@ export default function StatsScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor }]}>
-      <Text style={[styles.title, { color: textColor }]}>统计</Text>
+      <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: textColor }]}>统计</Text><View style={styles.headerSpacer} /></View>
 
       <View style={styles.overviewRow}>
         <StatCard label="总题数" value={stats?.total ?? 0} color={colors.primary} surface={surface} />
@@ -214,7 +216,7 @@ function StatCard({ label, value, color, surface }: { label: string; value: numb
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 22, fontWeight: "700", marginTop: 16, marginBottom: 16 },
+  pageHeader: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 16, marginLeft: -7 }, title: { flex: 1, fontSize: 22, fontWeight: "700", marginLeft: 3 }, headerSpacer: { width: 42 },
   overviewRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   smallCard: { flex: 1, borderRadius: 10, padding: 10, alignItems: "center" },
   statLabel: { fontSize: 11, color: colors.textTertiary },

@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { getDb, insertSampleData } from "../../src/data/db";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
+import { BackButton } from "../../src/components/PrototypeUI";
 
 type Collection = "starred" | "mistakes";
 
@@ -51,9 +52,7 @@ export default function CollectionScreen() {
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[styles.back, { color: colors.primary }]}>返回</Text>
-        </TouchableOpacity>
+        <BackButton onPress={() => router.back()} />
         <Text style={[styles.title, { color: c }]}>{title}</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -85,7 +84,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   back: { fontSize: 15, fontWeight: "600" },
   title: { fontSize: 20, fontWeight: "700" },
-  headerSpacer: { width: 30 },
+  headerSpacer: { width: 42 },
   content: { padding: 16, paddingTop: 4 },
   summary: { fontSize: 13, marginBottom: 12 },
   questionCard: { borderRadius: 12, padding: 16, marginBottom: 10 },

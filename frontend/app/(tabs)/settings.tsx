@@ -6,6 +6,7 @@ import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { API_BASE, setApiAuthToken } from "../../src/services/api";
+import { BackButton } from "../../src/components/PrototypeUI";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -290,7 +291,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
-      <Text style={[styles.title, { color: c }]}>我的</Text>
+      <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: c }]}>我的</Text><View style={styles.headerSpacer} /></View>
 
       <View style={[styles.card, { backgroundColor: surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>学习工具</Text>
@@ -416,7 +417,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  title: { fontSize: 22, fontWeight: "700", marginTop: 16, marginBottom: 16 },
+  pageHeader: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 16, marginLeft: -7 }, title: { flex: 1, fontSize: 22, fontWeight: "700", marginLeft: 3 }, headerSpacer: { width: 42 },
   sectionTitle: { fontSize: 14, fontWeight: "600", marginBottom: 12 },
   card: { borderRadius: 12, padding: 20, marginBottom: 12 },
   settingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

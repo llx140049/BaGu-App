@@ -213,6 +213,20 @@ export default function SettingsScreen() {
             ]
           );
           imported++;
+        } else {
+          await database.runAsync(
+            "UPDATE questions SET cat = ?, q = ?, a = ?, source = ?, source_document_id = ?, tags = ?, created_at = ? WHERE id = ?",
+            [
+              q.cat,
+              q.q,
+              q.a,
+              q.source || "",
+              q.source_document_id || null,
+              JSON.stringify(tags),
+              q.created_at || new Date().toISOString(),
+              q.id,
+            ]
+          );
         }
       }
 

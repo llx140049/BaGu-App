@@ -8,8 +8,11 @@ export default function AppStackLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme === "dark" ? colors.bgDark : colors.bg } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="hub" />
+      <Stack.Screen name="study-plan" />
+      <Stack.Screen name="study-plan-item" />
       <Stack.Screen name="questions" />
       <Stack.Screen name="topic" />
+      <Stack.Screen name="question-editor" />
       <Stack.Screen name="documents" />
       <Stack.Screen name="study" />
       <Stack.Screen name="doc-reader" />

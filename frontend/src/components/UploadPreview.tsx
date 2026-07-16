@@ -88,7 +88,7 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: c }]}>{generatesQuestions ? "AI 生成预览" : "文档导入预览"}</Text>
           <TouchableOpacity onPress={handleConfirm} disabled={uploading}>
-            <Text style={[styles.headerBtn, { color: colors.primary, fontWeight: "700" }]}>
+            <Text style={[styles.headerBtn, { color: colors.document, fontWeight: "700" }]}>
               {uploading ? "提交中..." : `确认导入 (${allQuestions.filter((_, i) => !edits[i]?._deleted).length})`}
             </Text>
           </TouchableOpacity>
@@ -113,10 +113,10 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
                 {directoryOptions.map((category) => (
                   <TouchableOpacity
                     key={category}
-                    style={[styles.directoryChip, { backgroundColor: draftCategory === category ? colors.primaryLight : (isDark ? "#2a342a" : "#e8ece4") }]}
+                    style={[styles.directoryChip, { backgroundColor: draftCategory === category ? colors.documentLight : (isDark ? "#2a342a" : "#e8ece4") }]}
                     onPress={() => setDraftCategory(category)}
                   >
-                    <Text style={[styles.directoryChipText, { color: draftCategory === category ? colors.primary : c }]}>{category}</Text>
+                    <Text style={[styles.directoryChipText, { color: draftCategory === category ? colors.document : c }]}>{category}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -135,7 +135,7 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
           ) : null}
           {previewData.categories.map((cat) => (
             <View key={cat.cat}>
-              <Text style={[styles.catTitle, { color: colors.primary }]}>
+              <Text style={[styles.catTitle, { color: colors.document }]}>
                 {cat.cat} ({cat.count} 题)
               </Text>
             </View>
@@ -154,7 +154,7 @@ export default function UploadPreviewModal({ visible, onClose, previewData, onCo
               <View key={idx} style={[styles.qCard, { backgroundColor: surface, opacity: deleted ? 0.4 : 1 }]}>
                 <View style={styles.qHeader}>
                   <TextInput
-                    style={[styles.catInput, { color: colors.primary, backgroundColor: isDark ? "#2a342a" : "#e8ece4" }]}
+                    style={[styles.catInput, { color: colors.document, backgroundColor: isDark ? "#2a342a" : "#e8ece4" }]}
                     value={showCat}
                     onChangeText={(v) => handleEdit(idx, "cat", v)}
                     editable={!deleted}

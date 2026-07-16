@@ -1,5 +1,7 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useFonts } from "expo-font";
+import { Inter_300Light } from "@expo-google-fonts/inter";
 import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useThemeStore } from "../src/store/useThemeStore";
@@ -9,12 +11,20 @@ import { colors } from "../src/tokens/colors";
 // must not make navigation titles and compact list rows overflow their layout.
 const TextComponent = Text as any;
 const TextInputComponent = TextInput as any;
-TextComponent.defaultProps = { ...(TextComponent.defaultProps || {}), allowFontScaling: false, maxFontSizeMultiplier: 1 };
-TextInputComponent.defaultProps = { ...(TextInputComponent.defaultProps || {}), allowFontScaling: false, maxFontSizeMultiplier: 1 };
+TextComponent.defaultProps = { ...(TextComponent.defaultProps || {}), allowFontScaling: false, maxFontSizeMultiplier: 1, style: { fontFamily: "MiSans-Regular" } };
+TextInputComponent.defaultProps = { ...(TextInputComponent.defaultProps || {}), allowFontScaling: false, maxFontSizeMultiplier: 1, style: { fontFamily: "MiSans-Regular" } };
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    "MiSans-Regular": require("../assets/fonts/MiSans-Regular.otf"),
+    "MiSans-Medium": require("../assets/fonts/MiSans-Medium.otf"),
+    "MiSans-Semibold": require("../assets/fonts/MiSans-Semibold.otf"),
+    "Inter-Light": Inter_300Light,
+  });
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
+
+  if (!fontsLoaded) return null;
 
   return <SafeAreaProvider>
     <View style={[styles.canvas, isDark && styles.canvasDark]}>

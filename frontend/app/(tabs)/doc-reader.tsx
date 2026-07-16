@@ -6,6 +6,7 @@ import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
 import { syncApi } from "../../src/services/api";
 import MarkdownDocument from "../../src/components/MarkdownDocument";
+import { Download, ListTree, MoreHorizontal, Play, Search, Settings, Share2 } from "lucide-react-native";
 
 interface DocData {
   id: string;
@@ -49,10 +50,10 @@ function renderContent(text: string, isDark: boolean): React.ReactNode[] {
     if (trimmed === "") { elements.push(<View key={"sp-" + i} style={{ height: 8 }} />); return; }
     if (trimmed.startsWith("# ")) { elements.push(<Text key={"h1-" + i} style={[s.h1, { color: c }]}>{trimmed.slice(2)}</Text>); return; }
     if (trimmed.startsWith("## ")) { elements.push(<Text key={"h2-" + i} style={[s.h2, { color: c }]}>{trimmed.slice(3)}</Text>); return; }
-    if (trimmed.startsWith("### ")) { elements.push(<Text key={"h3-" + i} style={[s.h3, { color: colors.primary }]}>{trimmed.slice(4)}</Text>); return; }
+    if (trimmed.startsWith("### ")) { elements.push(<Text key={"h3-" + i} style={[s.h3, { color: colors.document }]}>{trimmed.slice(4)}</Text>); return; }
     if (trimmed.startsWith("> ")) {
       elements.push(
-        <View key={"bq-" + i} style={[s.blockquote, { borderLeftColor: colors.primary }]}>
+        <View key={"bq-" + i} style={[s.blockquote, { borderLeftColor: colors.document }]}>
           <Text style={[s.blockquoteText, { color: colors.textSecondary }]}>{trimmed.slice(2)}</Text>
         </View>
       );
@@ -61,7 +62,7 @@ function renderContent(text: string, isDark: boolean): React.ReactNode[] {
     if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
       elements.push(
         <View key={"li-" + i} style={s.listItem}>
-          <Text style={[s.bullet, { color: colors.primary }]}>·</Text>
+          <Text style={[s.bullet, { color: colors.document }]}>·</Text>
           <Text style={[s.listText, { color: c }]}>{trimmed.slice(2)}</Text>
         </View>
       );
@@ -248,8 +249,8 @@ export default function DocReaderScreen() {
         <TouchableOpacity accessibilityLabel="返回" style={s.headerButton} onPress={() => router.back()}><Text style={s.backBtn}>{"<"}</Text></TouchableOpacity>
         <Text numberOfLines={1} style={[s.headerTitle, { color: c }]}>{doc.title}</Text>
         <View style={s.headerActions}>
-          <TouchableOpacity accessibilityLabel="做题" style={s.headerButton} onPress={startPractice}><Text style={s.practiceGlyph}>▷</Text></TouchableOpacity>
-          <TouchableOpacity accessibilityLabel="更多" style={s.headerButton} onPress={() => setShowMore((visible) => !visible)}><Text style={s.moreGlyph}>•••</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityLabel="做题" style={s.headerButton} onPress={startPractice}><Play size={21} color={colors.learning} fill={colors.learning} /></TouchableOpacity>
+          <TouchableOpacity accessibilityLabel="更多" style={s.headerButton} onPress={() => setShowMore((visible) => !visible)}><MoreHorizontal size={22} color={c} /></TouchableOpacity>
         </View>
       </View>
 
@@ -270,13 +271,13 @@ export default function DocReaderScreen() {
         <MarkdownDocument markdown={doc.content} />
       </ScrollView>
       {showMore ? <View style={[s.moreMenu, { backgroundColor: surface }]}>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}><Text style={s.moreRowIcon}>☷</Text><Text style={[s.moreRowText, { color: c }]}>目录</Text></TouchableOpacity>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("搜索", "文档内搜索将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⌕</Text><Text style={[s.moreRowText, { color: c }]}>搜索</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}><ListTree size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>目录</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("搜索", "文档内搜索将在下一阶段开放。"); }}><Search size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>搜索</Text></TouchableOpacity>
         <View style={s.moreDivider} />
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("分享", "分享功能将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⇧</Text><Text style={[s.moreRowText, { color: c }]}>分享</Text></TouchableOpacity>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("导出", "导出功能将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⇩</Text><Text style={[s.moreRowText, { color: c }]}>导出</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("分享", "分享功能将在下一阶段开放。"); }}><Share2 size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>分享</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("导出", "导出功能将在下一阶段开放。"); }}><Download size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>导出</Text></TouchableOpacity>
         <View style={s.moreDivider} />
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("阅读设置", "阅读设置将在下一阶段开放。"); }}><Text style={s.moreRowIcon}>⚙</Text><Text style={[s.moreRowText, { color: c }]}>阅读设置</Text></TouchableOpacity>
+        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("阅读设置", "阅读设置将在下一阶段开放。"); }}><Settings size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>阅读设置</Text></TouchableOpacity>
       </View> : null}
       <Modal visible={showCategoryEditor} transparent animationType="fade" onRequestClose={() => setShowCategoryEditor(false)}>
         <View style={s.modalOverlay}>
@@ -297,10 +298,10 @@ export default function DocReaderScreen() {
                 {directoryOptions.map((category) => (
                   <TouchableOpacity
                     key={category}
-                    style={[s.directoryChip, { backgroundColor: draftCategory === category ? colors.primaryLight : (isDark ? "#2a342a" : "#e8ece4") }]}
+                    style={[s.directoryChip, { backgroundColor: draftCategory === category ? colors.documentLight : (isDark ? "#2a342a" : "#e8ece4") }]}
                     onPress={() => setDraftCategory(category)}
                   >
-                    <Text style={[s.directoryChipText, { color: draftCategory === category ? colors.primary : c }]}>{category}</Text>
+                    <Text style={[s.directoryChipText, { color: draftCategory === category ? colors.document : c }]}>{category}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -357,9 +358,9 @@ const s = StyleSheet.create({
   scrollContent: { paddingHorizontal: 26, paddingTop: 14, paddingBottom: 36 },
   docTitle: { fontSize: 29, fontWeight: "700", marginBottom: 24, lineHeight: 39 },
   renameButton: { alignSelf: "flex-start", marginTop: -12, marginBottom: 16 },
-  renameText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  renameText: { color: colors.document, fontSize: 13, fontWeight: "600" },
   categoryButton: { alignSelf: "flex-start", marginTop: -10, marginBottom: 16 },
-  categoryText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  categoryText: { color: colors.document, fontSize: 13, fontWeight: "600" },
   practiceCard: { borderRadius: 12, padding: 14, marginBottom: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   practiceTitle: { fontSize: 15, fontWeight: "600" },
   practiceMeta: { fontSize: 12, marginTop: 4 },
@@ -382,7 +383,7 @@ const s = StyleSheet.create({
   directoryChipText: { fontSize: 12, fontWeight: "600" },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 18 },
   modalButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-  saveButton: { backgroundColor: colors.primary },
+  saveButton: { backgroundColor: colors.document },
   cancelText: { fontSize: 14, fontWeight: "600" },
   saveText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   h1: { fontSize: 20, fontWeight: "700", marginTop: 20, marginBottom: 10 },

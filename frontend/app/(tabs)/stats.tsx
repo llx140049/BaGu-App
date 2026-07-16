@@ -130,7 +130,7 @@ export default function StatsScreen() {
   const weekDays = heatmapWeeks[0] ?? [];
 
   if (loading) {
-    return <View style={[styles.loading, { backgroundColor }]}><ActivityIndicator color={colors.primary} size="large" /></View>;
+    return <View style={[styles.loading, { backgroundColor }]}><ActivityIndicator color={colors.statistics} size="large" /></View>;
   }
 
   return (
@@ -138,10 +138,10 @@ export default function StatsScreen() {
       <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: textColor }]}>统计</Text><View style={styles.headerSpacer} /></View>
 
       <View style={styles.overviewRow}>
-        <StatCard label="总题数" value={stats?.total ?? 0} color={colors.primary} surface={surface} />
-        <StatCard label="今日学习" value={stats?.studiedToday ?? 0} color={colors.success} surface={surface} />
-        <StatCard label="已掌握" value={stats?.mastered ?? 0} color={colors.primaryDark} surface={surface} />
-        <StatCard label="待复习" value={stats?.needReview ?? 0} color={colors.warning} surface={surface} />
+        <StatCard label="总题数" value={stats?.total ?? 0} color={colors.statistics} surface={surface} />
+        <StatCard label="今日学习" value={stats?.studiedToday ?? 0} color={colors.statistics} surface={surface} />
+        <StatCard label="已掌握" value={stats?.mastered ?? 0} color={colors.statistics} surface={surface} />
+        <StatCard label="待复习" value={stats?.needReview ?? 0} color={colors.statistics} surface={surface} />
       </View>
 
       <View style={[styles.card, { backgroundColor: surface }]}>
@@ -149,7 +149,7 @@ export default function StatsScreen() {
           <Text style={[styles.sectionTitle, { color: textColor }]}>{RANGE_LABELS[range]}学习热力图</Text>
           <View style={styles.rangeButtons}>
             {(["week", "month"] as HeatmapRange[]).map((item) => (
-              <TouchableOpacity key={item} style={[styles.rangeButton, range === item && { backgroundColor: colors.primary }]} onPress={() => setRange(item)}>
+              <TouchableOpacity key={item} style={[styles.rangeButton, range === item && { backgroundColor: colors.statistics }]} onPress={() => setRange(item)}>
                 <Text style={[styles.rangeText, { color: range === item ? "#fff" : textColor }]}>{RANGE_LABELS[item]}</Text>
               </TouchableOpacity>
             ))}
@@ -180,7 +180,7 @@ export default function StatsScreen() {
                     const intensity = day.count / maxActivity;
                     const backgroundColor = day.isFuture || day.count === 0
                       ? (isDark ? "#243129" : "#e0e5dc")
-                      : intensity > 0.66 ? colors.success : intensity > 0.33 ? colors.primary : colors.primaryLight;
+                      : intensity > 0.66 ? colors.statistics : intensity > 0.33 ? colors.statistics : colors.statisticsLight;
                     return <View key={column} style={[styles.heatCell, { backgroundColor }]} />;
                   })}
                 </View>
@@ -216,23 +216,23 @@ function StatCard({ label, value, color, surface }: { label: string; value: numb
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  pageHeader: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 16, marginLeft: -7 }, title: { flex: 1, fontSize: 22, fontWeight: "700", marginLeft: 3 }, headerSpacer: { width: 42 },
+  pageHeader: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 16, marginLeft: -7 }, title: { flex: 1, fontFamily: "MiSans-Semibold", fontSize: 22, marginLeft: 3 }, headerSpacer: { width: 42 },
   overviewRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   smallCard: { flex: 1, borderRadius: 10, padding: 10, alignItems: "center" },
-  statLabel: { fontSize: 11, color: colors.textTertiary },
-  statValue: { fontSize: 21, fontWeight: "700", marginTop: 3 },
+  statLabel: { fontFamily: "MiSans-Regular", fontSize: 11, color: colors.textTertiary },
+  statValue: { fontFamily: "MiSans-Semibold", fontSize: 21, marginTop: 3 },
   card: { borderRadius: 12, padding: 18, marginBottom: 12 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  sectionTitle: { fontSize: 15, fontWeight: "600" },
+  sectionTitle: { fontFamily: "MiSans-Medium", fontSize: 15 },
   rangeButtons: { flexDirection: "row", borderWidth: 1, borderColor: colors.border, borderRadius: 7, overflow: "hidden" },
   rangeButton: { paddingHorizontal: 9, paddingVertical: 5 },
-  rangeText: { fontSize: 12, fontWeight: "600" },
+  rangeText: { fontFamily: "MiSans-Medium", fontSize: 12 },
   heatmapBody: { flexDirection: "row" },
   weekChart: { height: 150, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   barColumn: { flex: 1, height: "100%", alignItems: "center", justifyContent: "flex-end" },
   barValue: { fontSize: 11, height: 18 },
   barTrack: { width: 18, height: 104, borderRadius: 5, justifyContent: "flex-end", overflow: "hidden" },
-  barFill: { width: "100%", backgroundColor: colors.primary, borderRadius: 5 },
+  barFill: { width: "100%", backgroundColor: colors.statistics, borderRadius: 5 },
   barLabel: { fontSize: 11, marginTop: 6 },
   weekdayColumn: { width: 20 },
   weekday: { height: 21, fontSize: 10 },
@@ -241,9 +241,9 @@ const styles = StyleSheet.create({
   heatCell: { width: 18, height: 18, marginRight: 3, marginBottom: 3, borderRadius: 4 },
   tagRow: { marginTop: 14 },
   tagHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },
-  tagName: { fontSize: 14, fontWeight: "500" },
-  tagCount: { fontSize: 12 },
+  tagName: { fontFamily: "MiSans-Medium", fontSize: 14 },
+  tagCount: { fontFamily: "MiSans-Regular", fontSize: 12 },
   progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 4, backgroundColor: colors.primary },
-  emptyText: { marginTop: 12, fontSize: 13 },
+  progressFill: { height: "100%", borderRadius: 4, backgroundColor: colors.statistics },
+  emptyText: { fontFamily: "MiSans-Regular", marginTop: 12, fontSize: 13 },
 });

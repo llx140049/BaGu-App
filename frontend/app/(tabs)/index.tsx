@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
+import { Play } from "lucide-react-native";
 import { getDb } from "../../src/data/db";
 import { MASTERED_LEVEL } from "../../src/data/sm2";
 import { colors } from "../../src/tokens/colors";
@@ -24,10 +25,9 @@ export default function HomeScreen() {
 
   return <View style={styles.page}>
     <View style={styles.center}>
-      <Text style={styles.count}>{dueCount}</Text>
-      <Text style={styles.caption}>待学习</Text>
+      <View style={styles.dueRow}><Text style={styles.count}>{dueCount}</Text><Text style={styles.caption}>待学习</Text></View>
       <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: "/(tabs)/study", params: { scope: "due" } })}>
-        <Text style={styles.startText}>开始学习</Text>
+        <Play size={25} color={colors.learning} fill={colors.learning} /><Text style={styles.startText}>开始学习</Text>
       </TouchableOpacity>
     </View>
     <View style={styles.menuAnchor}><MenuButton onPress={() => router.push("/(tabs)/hub")} /></View>
@@ -36,10 +36,11 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 62 },
-  count: { color: colors.text, fontSize: 184, fontWeight: "700", lineHeight: 190, letterSpacing: -8, fontVariant: ["tabular-nums"] },
-  caption: { color: colors.textSecondary, fontSize: 31, fontWeight: "400", marginTop: 24 },
-  startButton: { width: "72%", maxWidth: 360, minHeight: 72, borderRadius: 18, marginTop: 92, backgroundColor: colors.primary, justifyContent: "center", alignItems: "center", shadowColor: colors.primaryDark, shadowOpacity: 0.14, shadowRadius: 14, elevation: 2 },
-  startText: { color: "#fff", fontSize: 28, fontWeight: "500" },
-  menuAnchor: { position: "absolute", left: 28, bottom: 34 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 28 },
+  dueRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 10 },
+  count: { color: colors.info, fontFamily: "Inter-Light", fontSize: 88, lineHeight: 94, letterSpacing: -2, fontVariant: ["tabular-nums"] },
+  caption: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 16 },
+  startButton: { marginTop: 16, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 14 },
+  startText: { color: colors.learning, fontFamily: "MiSans-Medium", fontSize: 23 },
+  menuAnchor: { position: "absolute", left: 22, bottom: 24 },
 });

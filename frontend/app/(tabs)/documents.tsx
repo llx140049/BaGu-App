@@ -6,6 +6,7 @@ import { genId } from "../../src/data/utils";
 import { uploadApi } from "../../src/services/api";
 import { colors } from "../../src/tokens/colors";
 import { BackButton } from "../../src/components/PrototypeUI";
+import { ChevronRight, File, FileCode2, FileText, Folder, Image, MoreHorizontal, Play, Search, type LucideIcon } from "lucide-react-native";
 import FilePicker, { SelectedFile } from "../../src/components/FilePicker";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 
@@ -15,19 +16,20 @@ const folderOf = (category: string) => category.split("/").map((part) => part.tr
 
 function documentType(doc: DocumentRow) {
   const value = `${doc.title}.${doc.source}`.toLowerCase();
-  if (value.includes(".pdf")) return { label: "PDF", icon: "▰", color: "#e55a5a" };
-  if (value.includes(".md") || value.includes("markdown")) return { label: "Markdown", icon: "M", color: colors.primary };
-  if (/\.(png|jpg|jpeg|webp)/.test(value)) return { label: "图片", icon: "▧", color: "#61a8e5" };
-  return { label: "文档", icon: "▤", color: colors.textSecondary };
+  if (value.includes(".pdf")) return { label: "PDF", icon: FileText, color: colors.document };
+  if (value.includes(".md") || value.includes("markdown")) return { label: "Markdown", icon: FileCode2, color: colors.document };
+  if (/\.(png|jpg|jpeg|webp)/.test(value)) return { label: "图片", icon: Image, color: colors.document };
+  return { label: "文档", icon: File, color: colors.textSecondary };
 }
 
 function FolderRow({ folder, onPress, showMeta = true }: { folder: Folder; onPress: () => void; showMeta?: boolean }) {
-  return <TouchableOpacity style={styles.folderRow} onPress={onPress}><View style={styles.folderIcon}><Text style={styles.folderGlyph}>▰</Text></View><View style={styles.rowText}><Text numberOfLines={1} style={styles.rowTitle}>{folder.name}</Text>{showMeta ? <Text style={styles.meta}>{folder.count} 个文件</Text> : null}</View><Text style={styles.arrow}>›</Text></TouchableOpacity>;
+  return <TouchableOpacity style={styles.folderRow} onPress={onPress}><View style={styles.folderIcon}><Folder size={21} color={colors.document} /></View><View style={styles.rowText}><Text numberOfLines={1} style={styles.rowTitle}>{folder.name}</Text>{showMeta ? <Text style={styles.meta}>{folder.count} 个文件</Text> : null}</View><ChevronRight size={21} color={colors.textSecondary} /></TouchableOpacity>;
 }
 
 function RecentRow({ document, onPress }: { document: DocumentRow; onPress: () => void }) {
   const type = documentType(document);
-  return <TouchableOpacity style={styles.docRow} onPress={onPress}><View style={[styles.typeIcon, { backgroundColor: `${type.color}18` }]}><Text style={[styles.typeGlyph, { color: type.color }]}>{type.icon}</Text></View><View style={styles.rowText}><Text numberOfLines={1} style={styles.rowTitle}>{document.title}</Text><Text style={styles.meta}>{type.label}{document.last_read_at ? ` · ${new Date(document.last_read_at).toLocaleDateString()}` : ""}</Text></View><Text style={styles.more}>•••</Text></TouchableOpacity>;
+  const TypeIcon = type.icon;
+  return <TouchableOpacity style={styles.docRow} onPress={onPress}><View style={styles.typeIcon}><TypeIcon size={19} color={type.color} /></View><View style={styles.rowText}><Text numberOfLines={1} style={styles.rowTitle}>{document.title}</Text><Text style={styles.meta}>{type.label}{document.last_read_at ? ` · ${new Date(document.last_read_at).toLocaleDateString()}` : ""}</Text></View><MoreHorizontal size={20} color={colors.textSecondary} /></TouchableOpacity>;
 }
 
 export default function DocumentLibraryScreen() {
@@ -81,7 +83,7 @@ export default function DocumentLibraryScreen() {
   }, [documents, folder]);
 
   if (folder) return <View style={styles.page}>
-    <View style={styles.folderHeader}><BackButton onPress={() => router.back()} /><Text numberOfLines={1} style={styles.folderTitle}>{folder.split("/").pop()}</Text><View style={styles.folderActions}><TouchableOpacity accessibilityLabel="刷题" style={styles.folderAction} onPress={() => Alert.alert("刷题", "该文件夹暂无可开始的题目")}><Text style={styles.folderActionGlyph}>▷</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="搜索" style={styles.folderAction} onPress={() => Alert.alert("搜索", "搜索功能将在下一阶段开放")}><Text style={styles.folderActionGlyph}>⌕</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="更多" style={styles.folderAction} onPress={() => Alert.alert("更多", "更多操作将在下一阶段开放")}><Text style={styles.folderMore}>•••</Text></TouchableOpacity></View></View>
+    <View style={styles.folderHeader}><BackButton onPress={() => router.back()} /><Text numberOfLines={1} style={styles.folderTitle}>{folder.split("/").pop()}</Text><View style={styles.folderActions}><TouchableOpacity accessibilityLabel="刷题" style={styles.folderAction} onPress={() => Alert.alert("刷题", "该文件夹暂无可开始的题目")}><Play size={20} color={colors.learning} fill={colors.learning} /></TouchableOpacity><TouchableOpacity accessibilityLabel="搜索" style={styles.folderAction} onPress={() => Alert.alert("搜索", "搜索功能将在下一阶段开放")}><Search size={20} color={colors.text} /></TouchableOpacity><TouchableOpacity accessibilityLabel="更多" style={styles.folderAction} onPress={() => Alert.alert("更多", "更多操作将在下一阶段开放")}><MoreHorizontal size={21} color={colors.text} /></TouchableOpacity></View></View>
     <ScrollView contentContainerStyle={styles.folderContent} showsVerticalScrollIndicator={false}>
       {subfolders.length > 0 ? <><Text style={styles.sectionTitle}>文件夹</Text>{subfolders.map((item) => <FolderRow key={item.name} folder={item} showMeta={false} onPress={() => router.push({ pathname: "/(tabs)/documents", params: { folder: `${folder}/${item.name}` } })} />)}</> : null}
       <Text style={[styles.sectionTitle, subfolders.length > 0 && styles.filesSectionTitle]}>文件</Text>
@@ -102,9 +104,9 @@ export default function DocumentLibraryScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingTop: 14, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", marginBottom: 14 }, title: { flex: 1, color: colors.text, fontSize: 30, fontWeight: "700", marginLeft: 3 }, actions: { flexDirection: "row", alignItems: "center", gap: 12 }, action: { color: colors.text, fontSize: 30, lineHeight: 34, fontWeight: "300" },
-  content: { flex: 1, minHeight: 0, paddingHorizontal: 20, paddingBottom: 18 }, folderSection: { flex: 1.18, minHeight: 0, overflow: "hidden" }, recentSection: { flex: 1, minHeight: 0, marginTop: 13, overflow: "hidden" }, sectionTitle: { color: colors.textSecondary, fontSize: 15, marginBottom: 9 }, sectionList: { flex: 1, minHeight: 0 }, folderListContent: { paddingBottom: 2 },
-  folderRow: { minHeight: 68, backgroundColor: colors.surface, borderRadius: 15, padding: 11, flexDirection: "row", alignItems: "center", marginBottom: 6, shadowColor: "#1d1d1d", shadowOpacity: 0.025, shadowRadius: 8, elevation: 1 }, folderPlaceholder: { minHeight: 68, marginBottom: 6 }, folderIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 12 }, folderGlyph: { color: colors.primary, fontSize: 22 }, rowText: { flex: 1 }, rowTitle: { color: colors.text, fontSize: 16, fontWeight: "600" }, meta: { color: colors.textSecondary, fontSize: 12, marginTop: 3 }, arrow: { color: colors.textSecondary, fontSize: 29, fontWeight: "300" },
-  recentList: { flex: 1, minHeight: 0 }, docRow: { minHeight: 62, backgroundColor: colors.surface, borderRadius: 15, padding: 10, flexDirection: "row", alignItems: "center", marginBottom: 6, shadowColor: "#1d1d1d", shadowOpacity: 0.025, shadowRadius: 8, elevation: 1 }, recentPlaceholder: { minHeight: 62, marginBottom: 6 }, typeIcon: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center", marginRight: 11 }, typeGlyph: { fontSize: 17, fontWeight: "700" }, more: { color: colors.textSecondary, letterSpacing: 1, fontSize: 14 },
-  folderHeader: { paddingTop: 14, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", marginBottom: 18 }, folderTitle: { flex: 1, color: colors.text, fontSize: 30, fontWeight: "700", marginLeft: 3 }, folderActions: { flexDirection: "row", alignItems: "center", gap: 5 }, folderAction: { width: 38, height: 42, alignItems: "center", justifyContent: "center" }, folderActionGlyph: { color: colors.text, fontSize: 30, fontWeight: "300", lineHeight: 32 }, folderMore: { color: colors.text, fontSize: 17, letterSpacing: 1.5 }, folderContent: { paddingHorizontal: 20, paddingBottom: 28 }, filesSectionTitle: { marginTop: 22 }, emptyFolder: { color: colors.textSecondary, textAlign: "center", fontSize: 15, marginTop: 72 },
+  header: { paddingTop: 14, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", marginBottom: 14 }, title: { flex: 1, color: colors.text, fontFamily: "MiSans-Semibold", fontSize: 30, marginLeft: 3 }, actions: { flexDirection: "row", alignItems: "center", gap: 12 }, action: { color: colors.text, fontSize: 30, lineHeight: 34, fontWeight: "300" },
+  content: { flex: 1, minHeight: 0, paddingHorizontal: 20, paddingBottom: 18 }, folderSection: { flex: 1.18, minHeight: 0, overflow: "hidden" }, recentSection: { flex: 1, minHeight: 0, marginTop: 13, overflow: "hidden" }, sectionTitle: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 15, marginBottom: 9 }, sectionList: { flex: 1, minHeight: 0 }, folderListContent: { paddingBottom: 2 },
+  folderRow: { minHeight: 68, backgroundColor: colors.surface, borderRadius: 15, padding: 11, flexDirection: "row", alignItems: "center", marginBottom: 6, shadowColor: "#1d1d1d", shadowOpacity: 0.025, shadowRadius: 8, elevation: 1 }, folderPlaceholder: { minHeight: 68, marginBottom: 6 }, folderIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.iconBackground, alignItems: "center", justifyContent: "center", marginRight: 12 }, folderGlyph: { color: colors.document, fontSize: 22 }, rowText: { flex: 1 }, rowTitle: { color: colors.text, fontFamily: "MiSans-Medium", fontSize: 16 }, meta: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 12, marginTop: 3 }, arrow: { color: colors.textSecondary, fontSize: 29, fontWeight: "300" },
+  recentList: { flex: 1, minHeight: 0 }, docRow: { minHeight: 62, backgroundColor: colors.surface, borderRadius: 15, padding: 10, flexDirection: "row", alignItems: "center", marginBottom: 6, shadowColor: "#1d1d1d", shadowOpacity: 0.025, shadowRadius: 8, elevation: 1 }, recentPlaceholder: { minHeight: 62, marginBottom: 6 }, typeIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.iconBackground, alignItems: "center", justifyContent: "center", marginRight: 11 }, typeGlyph: { fontSize: 17, fontWeight: "700" }, more: { color: colors.textSecondary, letterSpacing: 1, fontSize: 14 },
+  folderHeader: { paddingTop: 14, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", marginBottom: 18 }, folderTitle: { flex: 1, color: colors.text, fontFamily: "MiSans-Semibold", fontSize: 30, marginLeft: 3 }, folderActions: { flexDirection: "row", alignItems: "center", gap: 5 }, folderAction: { width: 38, height: 42, alignItems: "center", justifyContent: "center" }, folderActionGlyph: { color: colors.text, fontSize: 30, fontWeight: "300", lineHeight: 32 }, folderMore: { color: colors.text, fontSize: 17, letterSpacing: 1.5 }, folderContent: { paddingHorizontal: 20, paddingBottom: 28 }, filesSectionTitle: { marginTop: 22 }, emptyFolder: { color: colors.textSecondary, fontFamily: "MiSans-Regular", textAlign: "center", fontSize: 15, marginTop: 72 },
 });

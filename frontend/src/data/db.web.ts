@@ -207,10 +207,16 @@ function createInMemoryDb() {
       if (upper.includes("FROM QUESTIONS") && upper.includes("COUNT(")) {
         return { cnt: tables.questions.length };
       }
+      if (upper.includes("FROM DOCUMENTS") && upper.includes("COUNT(")) {
+        return { cnt: tables.documents.length };
+      }
       if (upper.includes("FROM STUDY_RECORDS") && upper.includes("SUM(COUNT)")) {
         const date = params?.[0];
         const row = findStudyRecordByDate(date);
         return { cnt: row?.count ?? 0 };
+      }
+      if (upper.includes("FROM STUDY_RECORDS") && upper.includes("WHERE DATE = ?")) {
+        return findStudyRecordByDate(String(params?.[0] ?? "")) ?? null;
       }
       if (upper.includes("FROM STUDY_RECORDS") && upper.includes("SUM(NEW_COUNT)")) {
         const date = params?.[0];
@@ -418,6 +424,11 @@ function createInMemoryDb() {
       }
 
       if (upper.includes("UPDATE CARD_PROGRESS SET") && params) {
+        if (upper.includes("IS_STARRED = ? WHERE QUESTION_ID = ?")) {
+          const progress = tables.card_progress.find((row) => row.question_id === params[1]);
+          if (progress) progress.is_starred = params[0];
+          return;
+        }
         const progress = tables.card_progress.find((row) => row.id === params[6]);
         if (progress) {
           progress.level = params[0];

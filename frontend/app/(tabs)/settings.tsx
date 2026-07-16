@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, ActivityIndicator, Modal, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
@@ -7,6 +7,7 @@ import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { API_BASE, setApiAuthToken } from "../../src/services/api";
 import { BackButton } from "../../src/components/PrototypeUI";
+import { ChevronRight } from "lucide-react-native";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -47,6 +48,7 @@ export default function SettingsScreen() {
 
   // Local learning goal
   const [dailyNewTarget, setDailyNewTarget] = useState("10");
+  const [goalPickerVisible, setGoalPickerVisible] = useState(false);
 
   // Restore the current login for both Web and native SQLite.
   useEffect(() => {
@@ -93,6 +95,15 @@ export default function SettingsScreen() {
     );
     setDailyNewTarget(String(target));
     Alert.alert("已保存", `每日新题目标：${target} 题`);
+  };
+  const chooseDailyNewTarget = async (target: number) => {
+    const database = await getDb();
+    await database.runAsync(
+      "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ["daily_new_target", String(target)]
+    );
+    setDailyNewTarget(String(target));
+    setGoalPickerVisible(false);
   };
 
   const handleAuth = async () => {
@@ -159,9 +170,17 @@ export default function SettingsScreen() {
       const localStudyRecords: any[] = await database.getAllAsync(
         "SELECT id, date, count, correct, incorrect, new_count FROM study_records"
       );
+      const syncedQuestions = allQuestions.map((question) => {
+        let tags: string[] = [];
+        try {
+          const parsed = typeof question.tags === "string" ? JSON.parse(question.tags) : question.tags;
+          tags = Array.isArray(parsed) ? parsed.filter((tag) => typeof tag === "string" && tag.trim()) : [];
+        } catch {}
+        return { ...question, tags };
+      });
       await apiRequest(
         "/api/v1/sync/push",
-        { questions: allQuestions, progress: allProgress, documents: allDocuments, settings: Object.fromEntries(localSettings.map((item) => [item.key, item.value])), study_records: localStudyRecords },
+        { questions: syncedQuestions, progress: allProgress, documents: allDocuments, settings: Object.fromEntries(localSettings.map((item) => [item.key, item.value])), study_records: localStudyRecords },
         token
       );
       
@@ -171,6 +190,11 @@ export default function SettingsScreen() {
       // Merge pulled questions into local DB
       let imported = 0;
       for (const q of data.questions) {
+        let tags: string[] = [];
+        try {
+          const parsed = typeof q.tags === "string" ? JSON.parse(q.tags) : q.tags;
+          tags = Array.isArray(parsed) ? parsed.filter((tag) => typeof tag === "string" && tag.trim()) : [];
+        } catch {}
         const existing = await database.getFirstAsync(
           "SELECT id FROM questions WHERE id = ?", [q.id]
         );
@@ -184,7 +208,7 @@ export default function SettingsScreen() {
               q.a,
               q.source || "",
               q.source_document_id || null,
-              JSON.stringify(q.tags || []),
+              JSON.stringify(tags),
               q.created_at || new Date().toISOString(),
             ]
           );
@@ -289,6 +313,40 @@ export default function SettingsScreen() {
     setSyncing(false);
   };
 
+  return <View style={[styles.container, { backgroundColor: bg }]}>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: c }]}>我的</Text><View style={styles.headerSpacer} /></View>
+
+      <Text style={styles.listSectionTitle}>学习工具</Text>
+      <View style={styles.listGroup}>
+        <TouchableOpacity style={styles.listRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "starred" } })}><Text style={[styles.listLabel, { color: c }]}>收藏夹</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity>
+        <View style={styles.divider} />
+        <TouchableOpacity style={styles.listRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "mistakes" } })}><Text style={[styles.listLabel, { color: c }]}>错题本</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity>
+      </View>
+
+      <Text style={styles.listSectionTitle}>账号</Text>
+      <View style={styles.listGroup}>
+        <TouchableOpacity style={styles.listRow} onPress={token ? handleSync : () => setShowAuth(true)} disabled={syncing}><View><Text style={[styles.listLabel, { color: c }]}>{token ? "同步数据" : "登录 / 注册"}</Text>{token && userEmail ? <Text style={styles.rowDetail}>{userEmail}{lastSync ? ` · ${lastSync}` : ""}</Text> : null}</View>{syncing ? <ActivityIndicator color={colors.primary} size="small" /> : <ChevronRight size={20} color={colors.textTertiary} />}</TouchableOpacity>
+        {token ? <><View style={styles.divider} /><TouchableOpacity style={styles.listRow} onPress={handleLogout}><Text style={[styles.listLabel, { color: c }]}>退出登录</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity></> : null}
+      </View>
+
+      <Text style={styles.listSectionTitle}>学习设置</Text>
+      <View style={styles.listGroup}>
+        <TouchableOpacity style={styles.listRow} onPress={() => setGoalPickerVisible(true)}><Text style={[styles.listLabel, { color: c }]}>每日新题目标</Text><View style={styles.rowValue}><Text style={styles.rowValueText}>{dailyNewTarget}题</Text><ChevronRight size={20} color={colors.textTertiary} /></View></TouchableOpacity>
+      </View>
+
+      <Text style={styles.listSectionTitle}>外观</Text>
+      <View style={styles.listGroup}>
+        <View style={styles.listRow}><Text style={[styles.listLabel, { color: c }]}>深色模式</Text><Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: "#e6e7eb", true: colors.primaryDark }} thumbColor={isDark ? colors.primary : "#fff"} /></View>
+      </View>
+      <Text style={styles.version}>八股记忆 v0.1.0</Text>
+    </ScrollView>
+
+    <Modal visible={showAuth} transparent animationType="fade" onRequestClose={() => setShowAuth(false)}><View style={styles.modalOverlay}><View style={[styles.modal, { backgroundColor: surface }]}><Text style={[styles.modalTitle, { color: c }]}>{isRegister ? "注册" : "登录"}</Text><TextInput style={[styles.input, { color: c, borderColor: colors.border }]} placeholder="邮箱" placeholderTextColor={colors.textTertiary} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" /><TextInput style={[styles.input, { color: c, borderColor: colors.border }]} placeholder="密码" placeholderTextColor={colors.textTertiary} value={password} onChangeText={setPassword} secureTextEntry /><TouchableOpacity style={styles.authSubmit} onPress={handleAuth} disabled={authLoading}>{authLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.authSubmitText}>{isRegister ? "注册" : "登录"}</Text>}</TouchableOpacity><TouchableOpacity onPress={() => setIsRegister(!isRegister)} style={styles.authLink}><Text style={styles.linkText}>{isRegister ? "已有账号？去登录" : "没有账号？去注册"}</Text></TouchableOpacity><TouchableOpacity onPress={() => { setShowAuth(false); setEmail(""); setPassword(""); }} style={styles.authLink}><Text style={styles.cancelLink}>取消</Text></TouchableOpacity></View></View></Modal>
+
+    <Modal visible={goalPickerVisible} transparent animationType="fade" onRequestClose={() => setGoalPickerVisible(false)}><Pressable style={styles.goalOverlay} onPress={() => setGoalPickerVisible(false)}><Pressable style={[styles.goalSheet, { backgroundColor: surface }]} onPress={() => undefined}><View style={styles.goalHandle} /><Text style={[styles.goalTitle, { color: c }]}>每日新题目标</Text>{[5, 10, 20, 30, 50].map((target) => <TouchableOpacity key={target} style={styles.goalOption} onPress={() => chooseDailyNewTarget(target)}><Text style={[styles.goalOptionText, { color: String(target) === dailyNewTarget ? colors.primary : c }]}>{target}题</Text>{String(target) === dailyNewTarget ? <Text style={styles.goalSelected}>已选</Text> : null}</TouchableOpacity>)}</Pressable></Pressable></Modal>
+  </View>;
+  /*
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
       <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: c }]}>我的</Text><View style={styles.headerSpacer} /></View>
@@ -297,15 +355,15 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>学习工具</Text>
         <TouchableOpacity style={styles.entryRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "starred" } })}>
           <Text style={[styles.settingLabel, { color: c }]}>收藏夹</Text>
-          <Text style={[styles.entryArrow, { color: colors.textTertiary }]}>›</Text>
+          <ChevronRight size={21} color={colors.textTertiary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.entryRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "mistakes" } })}>
           <Text style={[styles.settingLabel, { color: c }]}>错题本</Text>
-          <Text style={[styles.entryArrow, { color: colors.textTertiary }]}>›</Text>
+          <ChevronRight size={21} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
-      {/* Account Section */}
+      {/* Account Section * /}
       <View style={[styles.card, { backgroundColor: surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>帐号</Text>
         {token ? (
@@ -336,7 +394,7 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* Auth Modal */}
+      {/* Auth Modal * /}
       {showAuth && (
         <View style={[styles.modalOverlay]}>
           <View style={[styles.modal, { backgroundColor: surface }]}>
@@ -377,7 +435,7 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* Theme Section */}
+      {/* Theme Section * /}
       <View style={[styles.card, { backgroundColor: surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>学习设置</Text>
         <Text style={[styles.settingDesc, { color: colors.textTertiary }]}>每日新题目标</Text>
@@ -396,7 +454,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Theme Section */}
+      {/* Theme Section * /}
       <View style={[styles.card, { backgroundColor: surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>外观</Text>
         <View style={styles.settingRow}>
@@ -413,16 +471,16 @@ export default function SettingsScreen() {
       <Text style={[styles.version, { color: colors.textTertiary }]}>八股记忆 v0.1.0</Text>
     </View>
   );
+  */
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  pageHeader: { flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 16, marginLeft: -7 }, title: { flex: 1, fontSize: 22, fontWeight: "700", marginLeft: 3 }, headerSpacer: { width: 42 },
+  container: { flex: 1 },
+  pageHeader: { flexDirection: "row", alignItems: "center", marginBottom: 18, marginLeft: -7 }, title: { flex: 1, fontFamily: "MiSans-Semibold", fontSize: 24, marginLeft: 3 }, headerSpacer: { width: 42 },
   sectionTitle: { fontSize: 14, fontWeight: "600", marginBottom: 12 },
   card: { borderRadius: 12, padding: 20, marginBottom: 12 },
   settingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   entryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 },
-  entryArrow: { fontSize: 28, lineHeight: 28 },
   settingLabel: { fontSize: 16, fontWeight: "500" },
   settingDesc: { fontSize: 12, marginTop: 8, lineHeight: 18 },
   row: { flexDirection: "row", gap: 10, marginTop: 14 },
@@ -438,5 +496,25 @@ const styles = StyleSheet.create({
   modal: { width: "85%", borderRadius: 16, padding: 24, alignItems: "center" },
   modalTitle: { fontSize: 20, fontWeight: "700", marginBottom: 20 },
   input: { width: "100%", borderWidth: 1, borderRadius: 10, padding: 14, fontSize: 15, marginBottom: 12 },
-  linkText: { fontSize: 14, fontWeight: "500" },
+  linkText: { color: colors.primary, fontSize: 14, fontFamily: "MiSans-Medium" },
+  content: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+  listSectionTitle: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 26, marginBottom: 8 },
+  listGroup: { marginHorizontal: 0 },
+  listRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8 },
+  listLabel: { fontFamily: "MiSans-Medium", fontSize: 16 },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 8, backgroundColor: "#efeff3" },
+  rowDetail: { color: colors.textTertiary, fontFamily: "MiSans-Regular", fontSize: 12, marginTop: 3 },
+  rowValue: { flexDirection: "row", alignItems: "center", gap: 5 },
+  rowValueText: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 15 },
+  authSubmit: { width: "100%", alignItems: "center", backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, marginTop: 2 },
+  authSubmitText: { color: "#fff", fontFamily: "MiSans-Medium", fontSize: 15 },
+  authLink: { marginTop: 14 },
+  cancelLink: { color: colors.textTertiary, fontFamily: "MiSans-Regular", fontSize: 14 },
+  goalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)", justifyContent: "flex-end" },
+  goalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingBottom: 30 },
+  goalHandle: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, backgroundColor: "#d5d6db", marginTop: 10, marginBottom: 18 },
+  goalTitle: { fontFamily: "MiSans-Medium", fontSize: 18, marginBottom: 10 },
+  goalOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#efeff3" },
+  goalOptionText: { fontFamily: "MiSans-Regular", fontSize: 16 },
+  goalSelected: { color: colors.primary, fontFamily: "MiSans-Medium", fontSize: 13 },
 });

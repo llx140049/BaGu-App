@@ -36,6 +36,18 @@ def _user_dir(user_id: str) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+
+def _tag_list(value: object) -> list[str]:
+    """Keep sync payloads compatible with both SQLite JSON text and API arrays."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            value = [value]
+    if not isinstance(value, list):
+        return []
+    return [tag.strip() for tag in value if isinstance(tag, str) and tag.strip()]
+
 class SyncPushRequest(BaseModel):
     questions: list[dict] = []
     progress: list[dict] = []
@@ -77,7 +89,7 @@ async def sync_push(
     for q in body.questions:
         qid = q.get("id")
         if qid:
-            existing_q[qid] = q
+            existing_q[qid] = {**q, "tags": _tag_list(q.get("tags"))}
     _write_json(ud / QUESTIONS_FILE, existing_q)
     
     existing_p = _read_json(ud / PROGRESS_FILE)
@@ -115,7 +127,7 @@ async def sync_push(
                     "created_at": document.created_at.isoformat() if document.created_at else None,
                 }
             else:
-                existing_d[did] = d
+                existing_d[did] = {**d, "tags": _tag_list(d.get("tags"))}
     _write_json(ud / DOCUMENTS_FILE, existing_d)
 
     if body.settings:

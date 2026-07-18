@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, Act
 import { useRouter } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
-import { clearAccountData, getDb } from "../../src/data/db";
+import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { API_BASE, setApiAuthToken } from "../../src/services/api";
 import { BackButton } from "../../src/components/PrototypeUI";
@@ -42,6 +42,12 @@ export default function SettingsScreen() {
   const [password, setPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
+  const [avatar, setAvatar] = useState("🙂");
+  const [signature, setSignature] = useState("保持好奇，持续学习");
+  const [draftSignature, setDraftSignature] = useState("");
+  const [avatarPickerVisible, setAvatarPickerVisible] = useState(false);
+  const [signatureEditorVisible, setSignatureEditorVisible] = useState(false);
+  const [profileSettingsVisible, setProfileSettingsVisible] = useState(false);
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -78,6 +84,35 @@ export default function SettingsScreen() {
   useEffect(() => {
     (async () => {
       const database = await getDb();
+      const avatarSetting = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["profile_avatar"]);
+      const signatureSetting = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["profile_signature"]);
+      if (avatarSetting?.value) setAvatar(avatarSetting.value);
+      if (signatureSetting?.value) setSignature(signatureSetting.value);
+    })().catch(() => {});
+  }, []);
+
+  const saveProfileSetting = async (key: "profile_avatar" | "profile_signature", value: string) => {
+    const database = await getDb();
+    await database.runAsync(
+      "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [key, value]
+    );
+  };
+  const chooseAvatar = async (nextAvatar: string) => {
+    setAvatar(nextAvatar);
+    setAvatarPickerVisible(false);
+    await saveProfileSetting("profile_avatar", nextAvatar);
+  };
+  const saveSignature = async () => {
+    const nextSignature = draftSignature.trim() || "保持好奇，持续学习";
+    setSignature(nextSignature);
+    setSignatureEditorVisible(false);
+    await saveProfileSetting("profile_signature", nextSignature);
+  };
+
+  useEffect(() => {
+    (async () => {
+      const database = await getDb();
       const setting = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["daily_new_target"]);
       if (setting?.value) setDailyNewTarget(setting.value);
     })().catch(() => {});
@@ -110,12 +145,26 @@ export default function SettingsScreen() {
     setDailyNewTarget(String(target));
     setGoalPickerVisible(false);
   };
+  const clearLibraryForAccountSwitch = async (database: any) => {
+    await database.runAsync("DELETE FROM card_progress");
+    await database.runAsync("DELETE FROM study_records");
+    await database.runAsync("DELETE FROM questions");
+    await database.runAsync("DELETE FROM documents");
+  };
 
   const handleAuth = async () => {
     if (!email || !password) { Alert.alert("请输入邮箱和密码"); return; }
     setAuthLoading(true);
     try {
       const data = await apiRequest(`/api/v1/auth/${isRegister ? "register" : "login"}`, { email, password });
+      const database = await getDb();
+      const previousAccount = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["library_owner_email"])
+        || await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_email"]);
+      const switchingAccount = Boolean(previousAccount?.value && previousAccount.value !== data.email);
+      if (switchingAccount) {
+        if (token) await handleSync(token);
+        await clearLibraryForAccountSwitch(database);
+      }
       setToken(data.token);
       setApiAuthToken(data.token);
       setUserEmail(data.email);
@@ -126,11 +175,6 @@ export default function SettingsScreen() {
         localStorage?.setItem("bagu_sync_token", data.token);
         localStorage?.setItem("bagu_sync_email", data.email);
       } catch {}
-      const database = await getDb();
-      const previousAccount = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_email"]);
-      if (previousAccount?.value && previousAccount.value !== data.email) {
-        await clearAccountData();
-      }
       await database.runAsync(
         "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         ["auth_token", data.token]
@@ -139,6 +183,14 @@ export default function SettingsScreen() {
         "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         ["auth_email", data.email]
       );
+      await database.runAsync(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        ["library_owner_email", data.email]
+      );
+      const localLibrary = await database.getFirstAsync("SELECT (SELECT COUNT(*) FROM questions) + (SELECT COUNT(*) FROM documents) AS count");
+      if (switchingAccount || Number(localLibrary?.count ?? 0) === 0) {
+        await handleSync(data.token);
+      }
       
       Alert.alert(isRegister ? "注册成功" : "登录成功", `欢迎, ${data.email}`);
     } catch (e: any) {
@@ -148,20 +200,32 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = async () => {
+    const activeToken = token;
+    if (activeToken) await handleSync(activeToken);
     setToken("");
     setApiAuthToken("");
     setUserEmail("");
     setLastSync("");
     try { localStorage?.removeItem("bagu_sync_token"); localStorage?.removeItem("bagu_sync_email"); } catch {}
     try {
-      await clearAccountData();
+      const database = await getDb();
+      await clearLibraryForAccountSwitch(database);
+      await database.runAsync("DELETE FROM app_settings WHERE key IN (?, ?)", ["auth_token", "auth_email"]);
     } catch {
-      Alert.alert("退出失败", "本机账户缓存未能清理，请重试。");
+      Alert.alert("退出失败", "本机登录凭据未能清理，请重试。");
     }
   };
+  const confirmLogout = () => Alert.alert(
+    "退出登录？",
+    "退出前会同步备份；随后将清空本机题库、文档和学习记录，重新登录后恢复该账号的数据。",
+    [
+      { text: "取消", style: "cancel" },
+      { text: "退出登录", style: "destructive", onPress: () => { handleLogout().catch(() => {}); } },
+    ]
+  );
 
-  const handleSync = async () => {
-    if (!token) { Alert.alert("请先登录"); return; }
+  const handleSync = async (syncToken = token) => {
+    if (!syncToken) { Alert.alert("请先登录"); return; }
     setSyncing(true);
     try {
       const database = await getDb();
@@ -191,11 +255,11 @@ export default function SettingsScreen() {
       await apiRequest(
         "/api/v1/sync/push",
         { questions: syncedQuestions, progress: allProgress, documents: allDocuments, settings: Object.fromEntries(localSettings.map((item) => [item.key, item.value])), study_records: localStudyRecords },
-        token
+        syncToken
       );
       
       // Pull
-      const data: any = await apiRequest("/api/v1/sync/pull", undefined, token);
+      const data: any = await apiRequest("/api/v1/sync/pull", undefined, syncToken);
       
       // Merge pulled questions into local DB
       let imported = 0;
@@ -341,6 +405,15 @@ export default function SettingsScreen() {
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.pageHeader}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: c }]}>我的</Text><View style={styles.headerSpacer} /></View>
 
+      <Text style={styles.listSectionTitle}>账号</Text>
+      {token ? <View style={[styles.profileCard, { backgroundColor: surface }]}>
+        <TouchableOpacity style={styles.profileMain} onPress={() => setProfileSettingsVisible(true)}>
+          <View style={styles.avatar}><Text style={styles.avatarText}>{avatar}</Text></View>
+          <View style={styles.profileCopy}><Text style={[styles.profileEmail, { color: c }]} numberOfLines={1}>{userEmail}</Text><Text style={styles.profileSignature} numberOfLines={1}>{signature}</Text></View>
+          <ChevronRight size={20} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </View> : <View style={styles.listGroup}><TouchableOpacity style={styles.listRow} onPress={() => setShowAuth(true)}><Text style={[styles.listLabel, { color: c }]}>登录 / 注册</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity></View>}
+
       <Text style={styles.listSectionTitle}>学习工具</Text>
       <View style={styles.listGroup}>
         <TouchableOpacity style={styles.listRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "starred" } })}><Text style={[styles.listLabel, { color: c }]}>收藏夹</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity>
@@ -348,25 +421,21 @@ export default function SettingsScreen() {
         <TouchableOpacity style={styles.listRow} onPress={() => router.push({ pathname: "/(tabs)/collection", params: { type: "mistakes" } })}><Text style={[styles.listLabel, { color: c }]}>错题本</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity>
       </View>
 
-      <Text style={styles.listSectionTitle}>账号</Text>
-      <View style={styles.listGroup}>
-        <TouchableOpacity style={styles.listRow} onPress={token ? handleSync : () => setShowAuth(true)} disabled={syncing}><View><Text style={[styles.listLabel, { color: c }]}>{token ? "同步数据" : "登录 / 注册"}</Text>{token && userEmail ? <Text style={styles.rowDetail}>{userEmail}{lastSync ? ` · ${lastSync}` : ""}</Text> : null}</View>{syncing ? <ActivityIndicator color={colors.primary} size="small" /> : <ChevronRight size={20} color={colors.textTertiary} />}</TouchableOpacity>
-        {token ? <><View style={styles.divider} /><TouchableOpacity style={styles.listRow} onPress={handleLogout}><Text style={[styles.listLabel, { color: c }]}>退出登录</Text><ChevronRight size={20} color={colors.textTertiary} /></TouchableOpacity></> : null}
-      </View>
-
-      <Text style={styles.listSectionTitle}>学习设置</Text>
-      <View style={styles.listGroup}>
-        <TouchableOpacity style={styles.listRow} onPress={() => setGoalPickerVisible(true)}><Text style={[styles.listLabel, { color: c }]}>每日新题目标</Text><View style={styles.rowValue}><Text style={styles.rowValueText}>{dailyNewTarget}题</Text><ChevronRight size={20} color={colors.textTertiary} /></View></TouchableOpacity>
-      </View>
-
       <Text style={styles.listSectionTitle}>外观</Text>
       <View style={styles.listGroup}>
         <View style={styles.listRow}><Text style={[styles.listLabel, { color: c }]}>深色模式</Text><Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: "#e6e7eb", true: colors.primaryDark }} thumbColor={isDark ? colors.primary : "#fff"} /></View>
       </View>
+      {token ? <TouchableOpacity style={styles.logoutButton} onPress={confirmLogout}><Text style={styles.logoutText}>退出登录</Text></TouchableOpacity> : null}
       <Text style={styles.version}>八股记忆 v0.1.0</Text>
     </ScrollView>
 
     <Modal visible={showAuth} transparent animationType="fade" onRequestClose={() => setShowAuth(false)}><View style={styles.modalOverlay}><View style={[styles.modal, { backgroundColor: surface }]}><Text style={[styles.modalTitle, { color: c }]}>{isRegister ? "注册" : "登录"}</Text><TextInput style={[styles.input, { color: c, borderColor: colors.border }]} placeholder="邮箱" placeholderTextColor={colors.textTertiary} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" /><TextInput style={[styles.input, { color: c, borderColor: colors.border }]} placeholder="密码" placeholderTextColor={colors.textTertiary} value={password} onChangeText={setPassword} secureTextEntry /><TouchableOpacity style={styles.authSubmit} onPress={handleAuth} disabled={authLoading}>{authLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.authSubmitText}>{isRegister ? "注册" : "登录"}</Text>}</TouchableOpacity><TouchableOpacity onPress={() => setIsRegister(!isRegister)} style={styles.authLink}><Text style={styles.linkText}>{isRegister ? "已有账号？去登录" : "没有账号？去注册"}</Text></TouchableOpacity><TouchableOpacity onPress={() => { setShowAuth(false); setEmail(""); setPassword(""); }} style={styles.authLink}><Text style={styles.cancelLink}>取消</Text></TouchableOpacity></View></View></Modal>
+
+    <Modal visible={profileSettingsVisible} transparent animationType="fade" onRequestClose={() => setProfileSettingsVisible(false)}><Pressable style={styles.profileOverlay} onPress={() => setProfileSettingsVisible(false)}><Pressable style={[styles.profileModal, { backgroundColor: surface }]} onPress={() => undefined}><Text style={[styles.profileModalTitle, { color: c }]}>个人资料</Text><TouchableOpacity style={styles.profileSettingRow} onPress={() => { setProfileSettingsVisible(false); setAvatarPickerVisible(true); }}><Text style={[styles.listLabel, { color: c }]}>头像设置</Text><View style={styles.rowValue}><Text style={styles.avatarPreview}>{avatar}</Text><ChevronRight size={20} color={colors.textTertiary} /></View></TouchableOpacity><View style={styles.divider} /><TouchableOpacity style={styles.profileSettingRow} onPress={() => { setDraftSignature(signature); setProfileSettingsVisible(false); setSignatureEditorVisible(true); }}><Text style={[styles.listLabel, { color: c }]}>个人签名</Text><View style={styles.rowValue}><Text style={styles.signatureValue} numberOfLines={1}>{signature}</Text><ChevronRight size={20} color={colors.textTertiary} /></View></TouchableOpacity></Pressable></Pressable></Modal>
+
+    <Modal visible={avatarPickerVisible} transparent animationType="fade" onRequestClose={() => setAvatarPickerVisible(false)}><Pressable style={styles.profileOverlay} onPress={() => setAvatarPickerVisible(false)}><Pressable style={[styles.profileModal, { backgroundColor: surface }]} onPress={() => undefined}><Text style={[styles.profileModalTitle, { color: c }]}>选择头像</Text><View style={styles.avatarOptions}>{["🙂", "😺", "🦊", "🐼", "🐨", "🐯"].map((option) => <TouchableOpacity key={option} style={[styles.avatarOption, avatar === option && styles.avatarOptionSelected]} onPress={() => chooseAvatar(option)}><Text style={styles.avatarOptionText}>{option}</Text></TouchableOpacity>)}</View></Pressable></Pressable></Modal>
+
+    <Modal visible={signatureEditorVisible} transparent animationType="fade" onRequestClose={() => setSignatureEditorVisible(false)}><Pressable style={styles.profileOverlay} onPress={() => setSignatureEditorVisible(false)}><Pressable style={[styles.profileModal, { backgroundColor: surface }]} onPress={() => undefined}><Text style={[styles.profileModalTitle, { color: c }]}>个人签名</Text><TextInput style={[styles.signatureInput, { color: c, borderColor: isDark ? colors.borderDark : colors.border }]} value={draftSignature} onChangeText={setDraftSignature} placeholder="写一句介绍自己" placeholderTextColor={colors.textTertiary} maxLength={30} autoFocus /><View style={styles.signatureActions}><TouchableOpacity style={styles.signatureAction} onPress={() => setSignatureEditorVisible(false)}><Text style={styles.signatureCancel}>取消</Text></TouchableOpacity><TouchableOpacity style={styles.signatureAction} onPress={saveSignature}><Text style={styles.signatureSave}>保存</Text></TouchableOpacity></View></Pressable></Pressable></Modal>
 
     <Modal visible={goalPickerVisible} transparent animationType="fade" onRequestClose={() => setGoalPickerVisible(false)}><Pressable style={styles.goalOverlay} onPress={() => setGoalPickerVisible(false)}><Pressable style={[styles.goalSheet, { backgroundColor: surface }]} onPress={() => undefined}><View style={styles.goalHandle} /><Text style={[styles.goalTitle, { color: c }]}>每日新题目标</Text>{[5, 10, 20, 30, 50].map((target) => <TouchableOpacity key={target} style={styles.goalOption} onPress={() => chooseDailyNewTarget(target)}><Text style={[styles.goalOptionText, { color: String(target) === dailyNewTarget ? colors.primary : c }]}>{target}题</Text>{String(target) === dailyNewTarget ? <Text style={styles.goalSelected}>已选</Text> : null}</TouchableOpacity>)}</Pressable></Pressable></Modal>
   </View>;
@@ -524,16 +593,40 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
   listSectionTitle: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 26, marginBottom: 8 },
   listGroup: { marginHorizontal: 0 },
+  profileCard: { borderRadius: 16, overflow: "hidden" },
+  profileMain: { minHeight: 92, paddingHorizontal: 16, flexDirection: "row", alignItems: "center" },
+  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#E5E7EB", alignItems: "center", justifyContent: "center", marginRight: 13 },
+  avatarText: { fontSize: 29 },
+  profileCopy: { flex: 1, minWidth: 0 },
+  profileEmail: { fontFamily: "MiSans-Semibold", fontSize: 16 },
+  profileSignature: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 5 },
   listRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8 },
   listLabel: { fontFamily: "MiSans-Medium", fontSize: 16 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 8, backgroundColor: "#efeff3" },
   rowDetail: { color: colors.textTertiary, fontFamily: "MiSans-Regular", fontSize: 12, marginTop: 3 },
   rowValue: { flexDirection: "row", alignItems: "center", gap: 5 },
   rowValueText: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 15 },
+  avatarPreview: { fontSize: 20, marginRight: 3 },
+  signatureValue: { maxWidth: 130, color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 14 },
+  logoutButton: { minHeight: 50, marginTop: 40, alignItems: "center", justifyContent: "center" },
+  logoutText: { color: colors.danger, fontFamily: "MiSans-Medium", fontSize: 16 },
   authSubmit: { width: "100%", alignItems: "center", backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, marginTop: 2 },
   authSubmitText: { color: "#fff", fontFamily: "MiSans-Medium", fontSize: 15 },
   authLink: { marginTop: 14 },
   cancelLink: { color: colors.textTertiary, fontFamily: "MiSans-Regular", fontSize: 14 },
+  profileOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.32)", alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
+  profileModal: { width: "100%", borderRadius: 18, padding: 20 },
+  profileModalTitle: { fontFamily: "MiSans-Semibold", fontSize: 18, marginBottom: 16 },
+  profileSettingRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  avatarOptions: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  avatarOption: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#F4F2F8", alignItems: "center", justifyContent: "center" },
+  avatarOptionSelected: { backgroundColor: "#E5DFFF", borderWidth: 1, borderColor: "#7C5CE0" },
+  avatarOptionText: { fontSize: 25 },
+  signatureInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontFamily: "MiSans-Regular", fontSize: 15 },
+  signatureActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, marginTop: 18 },
+  signatureAction: { paddingVertical: 6, paddingHorizontal: 4 },
+  signatureCancel: { color: colors.textSecondary, fontFamily: "MiSans-Medium", fontSize: 15 },
+  signatureSave: { color: colors.primary, fontFamily: "MiSans-Medium", fontSize: 15 },
   goalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)", justifyContent: "flex-end" },
   goalSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingBottom: 30 },
   goalHandle: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, backgroundColor: "#d5d6db", marginTop: 10, marginBottom: 18 },

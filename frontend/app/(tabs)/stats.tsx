@@ -6,6 +6,7 @@ import { MASTERED_LEVEL } from "../../src/data/sm2";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { BackButton } from "../../src/components/PrototypeUI";
+import { parseQuestionTags, topLevelTag } from "../../src/data/tagging";
 
 type HeatmapRange = "week" | "month";
 
@@ -13,6 +14,7 @@ interface QuestionProgress {
   level: number;
   lastReview?: string | null;
   nextReview?: string | null;
+  cat: string;
   tags?: string | string[] | null;
 }
 
@@ -21,11 +23,11 @@ interface StatsData {
   studiedToday: number;
   mastered: number;
   needReview: number;
-  tags: { name: string; total: number; mastered: number }[];
+  tags: { name: string; total: number; studied: number; mastered: number }[];
   activity: { date: string; count: number }[];
 }
 
-const RANGE_LABELS: Record<HeatmapRange, string> = { week: "本周", month: "本月" };
+const RANGE_LABELS: Record<HeatmapRange, string> = { week: "本周", month: "近2月" };
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
 
 function startOfWeek(date: Date) {
@@ -39,19 +41,8 @@ function dateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function parseTags(tags: QuestionProgress["tags"]): string[] {
-  if (Array.isArray(tags)) return tags.filter(Boolean);
-  if (!tags) return [];
-  try {
-    const parsed = JSON.parse(tags);
-    return Array.isArray(parsed) ? parsed.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())) : [];
-  } catch {
-    return [];
-  }
-}
-
 function buildHeatmap(activity: StatsData["activity"], range: HeatmapRange) {
-  const weekCount = range === "week" ? 1 : 5;
+  const weekCount = range === "week" ? 1 : 9;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const start = startOfWeek(today);
@@ -86,6 +77,7 @@ export default function StatsScreen() {
         `SELECT COALESCE(cp.level, 0) AS level,
                 cp.last_review AS lastReview,
                 cp.next_review AS nextReview,
+                q.cat AS cat,
                 q.tags AS tags
          FROM questions q
          LEFT JOIN card_progress cp ON q.id = cp.question_id`
@@ -96,13 +88,14 @@ export default function StatsScreen() {
         [today]
       );
       const activity: { date: string; count: number }[] = await database.getAllAsync("SELECT date, count FROM study_records");
-      const tagMap = new Map<string, { total: number; mastered: number }>();
+      const tagMap = new Map<string, { total: number; studied: number; mastered: number }>();
       for (const card of cards) {
-        const names = parseTags(card.tags);
-        const effectiveTags = names.length > 0 ? names : ["未分类"];
+        const names = parseQuestionTags(card.tags, card.cat).map(topLevelTag);
+        const effectiveTags = Array.from(new Set(names.length > 0 ? names : ["未分类"]));
         for (const name of effectiveTags) {
-          const current = tagMap.get(name) ?? { total: 0, mastered: 0 };
+          const current = tagMap.get(name) ?? { total: 0, studied: 0, mastered: 0 };
           current.total += 1;
+          if (card.lastReview) current.studied += 1;
           if (card.level >= MASTERED_LEVEL) current.mastered += 1;
           tagMap.set(name, current);
         }
@@ -160,7 +153,7 @@ export default function StatsScreen() {
             {weekDays.map((day, index) => (
               <View key={index} style={styles.barColumn}>
                 <Text style={[styles.barValue, { color: colors.textSecondary }]}>{day.isFuture ? "" : day.count}</Text>
-                <View style={[styles.barTrack, { backgroundColor: isDark ? "#243129" : "#e0e5dc" }]}>
+                <View style={[styles.barTrack, { backgroundColor: isDark ? "#393741" : "#E8E6EE" }]}>
                   <View style={[styles.barFill, { height: `${day.isFuture ? 0 : Math.max(day.count > 0 ? 8 : 0, (day.count / maxActivity) * 100)}%` }]} />
                 </View>
                 <Text style={[styles.barLabel, { color: colors.textSecondary }]}>{WEEKDAY_LABELS[index]}</Text>
@@ -179,7 +172,7 @@ export default function StatsScreen() {
                     const day = week[row];
                     const intensity = day.count / maxActivity;
                     const backgroundColor = day.isFuture || day.count === 0
-                      ? (isDark ? "#243129" : "#e0e5dc")
+                      ? (isDark ? "#393741" : "#E8E6EE")
                       : intensity > 0.66 ? colors.statistics : intensity > 0.33 ? colors.statistics : colors.statisticsLight;
                     return <View key={column} style={[styles.heatCell, { backgroundColor }]} />;
                   })}
@@ -196,10 +189,11 @@ export default function StatsScreen() {
           <View key={tag.name} style={styles.tagRow}>
             <View style={styles.tagHeader}>
               <Text style={[styles.tagName, { color: textColor }]}>{tag.name}</Text>
-              <Text style={[styles.tagCount, { color: colors.textTertiary }]}>{tag.mastered}/{tag.total}</Text>
+              <Text style={[styles.tagPercent, { color: "#7C5CE0" }]}>{Math.round((tag.mastered / Math.max(1, tag.total)) * 100)}%</Text>
             </View>
-            <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-              <View style={[styles.progressFill, { width: `${(tag.mastered / Math.max(1, tag.total)) * 100}%` }]} />
+            <Text style={[styles.tagDetail, { color: colors.textTertiary }]}>已做 {tag.studied}/{tag.total} · 已掌握 {tag.mastered}</Text>
+            <View style={[styles.progressTrack, { backgroundColor: isDark ? "#2e353a" : colors.border }]}>
+              <View style={[styles.masteredFill, { width: `${(tag.mastered / Math.max(1, tag.total)) * 100}%` }]} />
             </View>
           </View>
         )) : <Text style={[styles.emptyText, { color: colors.textTertiary }]}>暂无题目数据</Text>}
@@ -239,11 +233,12 @@ const styles = StyleSheet.create({
   heatmapGrid: { flex: 1 },
   heatmapRow: { flexDirection: "row", height: 21 },
   heatCell: { width: 18, height: 18, marginRight: 3, marginBottom: 3, borderRadius: 4 },
-  tagRow: { marginTop: 14 },
-  tagHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },
+  tagRow: { marginTop: 16 },
+  tagHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   tagName: { fontFamily: "MiSans-Medium", fontSize: 14 },
-  tagCount: { fontFamily: "MiSans-Regular", fontSize: 12 },
-  progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 4, backgroundColor: colors.statistics },
+  tagPercent: { fontFamily: "MiSans-Semibold", fontSize: 13 },
+  tagDetail: { fontFamily: "MiSans-Regular", fontSize: 12, marginTop: 4, marginBottom: 7 },
+  progressTrack: { height: 8, borderRadius: 4, overflow: "hidden", position: "relative" },
+  masteredFill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 4, backgroundColor: colors.primary },
   emptyText: { fontFamily: "MiSans-Regular", marginTop: 12, fontSize: 13 },
 });

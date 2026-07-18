@@ -2,6 +2,7 @@ import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowLeft, BookOpenCheck, FileText, Menu, Play } from "lucide-react-native";
 import { colors } from "../tokens/colors";
+import { useThemeStore } from "../store/useThemeStore";
 
 export function FloatingMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -17,8 +18,8 @@ export function FloatingMenu({ visible, onClose }: { visible: boolean; onClose: 
   </Modal>;
 }
 
-export function MenuButton({ onPress }: { onPress: () => void }) { return <TouchableOpacity accessibilityLabel="打开学习中心" style={styles.floatingButton} onPress={onPress}><Menu size={20} color={colors.textSecondary} /></TouchableOpacity>; }
-export function BackButton({ onPress }: { onPress: () => void }) { return <TouchableOpacity accessibilityLabel="返回" style={styles.backButton} onPress={onPress}><ArrowLeft size={25} color={colors.text} strokeWidth={1.8} /></TouchableOpacity>; }
+export function MenuButton({ onPress }: { onPress: () => void }) { const isDark = useThemeStore((state) => state.theme === "dark"); return <TouchableOpacity accessibilityLabel="打开学习中心" style={styles.floatingButton} onPress={onPress}><Menu size={20} color={isDark ? colors.textDark : colors.textSecondary} /></TouchableOpacity>; }
+export function BackButton({ onPress }: { onPress: () => void }) { const isDark = useThemeStore((state) => state.theme === "dark"); return <TouchableOpacity accessibilityLabel="返回" style={styles.backButton} onPress={onPress}><ArrowLeft size={25} color={isDark ? colors.textDark : colors.text} strokeWidth={1.8} /></TouchableOpacity>; }
 export function BottomPrimaryButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) { return <View style={styles.bottomWrap}><TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.primaryButton, disabled && styles.disabledButton]}><Play size={17} color="#fff" fill="#fff" /><Text style={styles.primaryText}>{label}</Text></TouchableOpacity></View>; }
 
 const styles = StyleSheet.create({

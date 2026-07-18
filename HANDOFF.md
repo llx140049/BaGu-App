@@ -1,5 +1,84 @@
 # BaguApp 项目交接文档
 
+> 最后整理：2026-07-18（当前对话）。下方旧记录保留作背景；继续开发请以本节为准。
+
+## 当前交接摘要（优先阅读）
+
+### 工作区与提交
+
+- 当前分支：`master`；最新提交：`d623665 feat: 完善学习计划与文档库体验`。
+- 工作区是 **dirty worktree**，包含一整批已实现但尚未提交的功能。保留全部现有修改；不要执行 `git reset --hard`、`git checkout --`、批量删除或清理未跟踪目录。
+- 本轮没有创建提交。若需要提交，请先按功能拆分并征得用户同意。
+- 特别不要删除：`frontend/android/`、`backend/bagu.db`、`backend/venv-runtime/`、`.tmp-goodtime/`、`design/`。
+
+### 一键启动与手机联调
+
+在项目根目录执行：
+
+```powershell
+cd C:\Users\18253\Documents\BaguApp
+.\start-dev.ps1
+```
+
+- 脚本会启动 FastAPI（`8001`）、Metro（`8081`），并在检测到 Android 设备时执行 `adb reverse tcp:8081 tcp:8081`、`adb reverse tcp:8001 tcp:8001`。
+- 已连接过的设备序列号：`GILFK7Z95P4XMJYL`（以 `adb devices` 实际结果为准）。手机卡在启动页时，优先重新执行一键脚本，再彻底关闭并重开 App。
+- `frontend/src/services/api.ts` 的原生端 API 地址当前为 `http://192.168.2.21:8001`。这是本机本次联网时的 LAN IP；网络变化后登录/导入失败，先通过 `ipconfig` 查当前 IPv4，再更新此处或改用 `EXPO_PUBLIC_API_URL` + `adb reverse`。
+- 本机已验证 `http://192.168.2.21:8001/docs` 返回 `200`。
+
+### 本轮重点改动（尚未提交）
+
+#### 主题与页面
+
+- 主题改为可持久化：`frontend/src/store/useThemeStore.ts` 读取/写入 SQLite 的 `app_settings.theme`；`frontend/app/_layout.tsx` 启动时 hydrate。
+- 公共返回/菜单按钮已适配深色：`frontend/src/components/PrototypeUI.tsx`。
+- 已覆盖首页、知识库、题库、题库层级、收藏/错题集合、文档库、文档层级、文档阅读、学习、统计、我的、学习计划及计划详情的大部分背景/文字/卡片。
+- 文档库长按选择态：顶部批量栏会替代普通返回栏；目前不单独使用深灰底，而是融入页面背景。选中行在深色下使用 `#353740`。
+- 题库/文档库/收藏错题的长按批量选择已处理深色选中态。若继续验收，应重点看：根目录、二级目录、批量删除弹窗和导出模式。
+
+#### 文档与 Markdown
+
+- `MarkdownDocument` 原生 WebView 已支持 `isDark`，并用深/浅 CSS 渲染标题、正文、引用、代码块、表格、链接和滚动条：
+  - `frontend/src/components/MarkdownDocument.native.tsx`
+  - `frontend/src/components/MarkdownDocument.web.tsx`
+  - `frontend/src/components/MarkdownDocumentHtml.ts`
+- `doc-reader.tsx` 已将主题传给正文和编辑预览；阅读页返回箭头、更多菜单也适配。
+- 翻卡答案不再使用 WebView（会造成卡片内无法滚到底且底色不一致）。`frontend/app/(tabs)/study.tsx` 现在使用原生轻量 Markdown 渲染，支持标题、粗体、列表、引用和换行；复杂表格/LaTeX 暂未在翻卡答案中渲染，这是当前可继续优化点。
+
+#### 登录、数据库与同步
+
+- 近期“登录失败”的两类原因：
+  1. 手机访问旧 LAN IP；已更新 API 默认地址为 `192.168.2.21`。
+  2. SQLite 初始化竞争导致 `NativeDatabase.prepareAsync` / `NullPointerException`；已在 `frontend/src/data/db.ts` 增加 `dbPromise`，所有调用等待同一次数据库初始化和迁移完成。
+- 设置页登录/退出会按账号隔离本地题库和文档库：切换账号前同步旧账号，切换后清空本地库，再拉取新账号数据；退出后本地库应为空。
+- 若仍出现登录异常，先记录完整弹窗；再检查：后端 `8001`、手机与电脑网络、`adb reverse --list`、API 地址、以及 Metro 是否已重新加载最新 JS。
+
+#### AI 标签与导入
+
+- 导入时 AI 自动生成标签：问题标签限定 1–2 个，文档标签最多 3 个；会参考已有标签归纳上位概念，避免仅按文件名生成标签。
+- Markdown Q/A 导入的题干/答案倒置修复采用保守规则。
+- 相关后端文件：`backend/app/api/v1/upload.py`、`backend/app/services/deepseek.py`。
+
+### 已知待验证/建议下一步
+
+1. 用真机逐页切换深色模式，重点验收：文档库长按、题库导出/标签弹窗、文档阅读、学习计划、翻卡长答案。
+2. 翻卡答案如必须支持完整 LaTeX、表格和图片，需要实现不依赖嵌套 WebView 的原生渲染方案，或重新设计卡片内 WebView 的高度与手势传递。
+3. 网络切换后，优先将 API 地址改成当前 LAN IP，或完成基于开发环境的稳定 API 地址配置，避免再次硬编码失效。
+4. 真机回归 PDF 转 Markdown（含图片）及原 PDF 阅读；旧记录中的 PDF 验收项仍然有效。
+
+### 最小检查清单
+
+```powershell
+cd C:\Users\18253\Documents\BaguApp
+git status --short
+git diff --check
+
+cd frontend
+npx.cmd tsc --noEmit
+
+cd ..\backend
+.\venv-runtime\Scripts\python.exe -m py_compile app\api\v1\upload.py app\services\deepseek.py
+```
+
 更新日期：2026-07-18
 当前分支：`master`
 最近已提交版本：`2345095 fix: 同步已有题目的标签更新`

@@ -7,9 +7,10 @@ import { renderMarkdownHtml } from "./MarkdownDocumentHtml";
 interface MarkdownDocumentProps {
   markdown: string;
   imageBaseUrl?: string;
+  isDark?: boolean;
 }
 
-export default function MarkdownDocument({ markdown, imageBaseUrl = "" }: MarkdownDocumentProps) {
+export default function MarkdownDocument({ markdown, imageBaseUrl = "", isDark = false }: MarkdownDocumentProps) {
   const [fontUri, setFontUri] = useState("");
   useEffect(() => {
     Asset.fromModule(require("../../assets/fonts/MiSans-Regular.otf")).downloadAsync()
@@ -17,7 +18,7 @@ export default function MarkdownDocument({ markdown, imageBaseUrl = "" }: Markdo
       .catch(() => setFontUri(""));
   }, []);
   const normalizedMarkdown = useMemo(() => markdown.replace(/\{\{API_BASE\}\}(\/api\/v1\/document-assets\/[^/\s)]+\/)(?:\{\{API_BASE\}\}\1)/g, "{{API_BASE}}$1"), [markdown]);
-  const html = useMemo(() => renderMarkdownHtml(normalizedMarkdown.replaceAll("{{API_BASE}}", imageBaseUrl), fontUri), [normalizedMarkdown, imageBaseUrl, fontUri]);
+  const html = useMemo(() => renderMarkdownHtml(normalizedMarkdown.replaceAll("{{API_BASE}}", imageBaseUrl), fontUri, isDark), [normalizedMarkdown, imageBaseUrl, fontUri, isDark]);
   const [height, setHeight] = useState(320);
   const reportHeight = `
     (function () {
@@ -42,7 +43,7 @@ export default function MarkdownDocument({ markdown, imageBaseUrl = "" }: Markdo
           if (Number.isFinite(nextHeight) && nextHeight > 0) setHeight(nextHeight + 8);
         }}
         scrollEnabled={false}
-        style={styles.webview}
+        style={[styles.webview, { backgroundColor: isDark ? "#191A20" : "#FFFFFF" }]}
       />
     </View>
   );

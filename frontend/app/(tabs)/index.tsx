@@ -6,11 +6,13 @@ import { getDb } from "../../src/data/db";
 import { MASTERED_LEVEL } from "../../src/data/sm2";
 import { colors } from "../../src/tokens/colors";
 import { MenuButton } from "../../src/components/PrototypeUI";
+import { useThemeStore } from "../../src/store/useThemeStore";
 
 interface ProgressRow { level: number; lastReview?: string | null; nextReview?: string | null; }
 
 export default function HomeScreen() {
   const router = useRouter();
+  const isDark = useThemeStore((state) => state.theme === "dark");
   const [dueCount, setDueCount] = useState(0);
 
   const loadCount = useCallback(async () => {
@@ -23,7 +25,7 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => { loadCount().catch(() => setDueCount(0)); }, [loadCount]));
 
-  return <View style={styles.page}>
+  return <View style={[styles.page, { backgroundColor: isDark ? colors.bgDark : colors.bg }]}>
     <View style={styles.center}>
       <View style={styles.dueRow}><Text style={styles.count}>{dueCount}</Text><Text style={styles.caption}>待学习</Text></View>
       <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: "/(tabs)/study", params: { scope: "due" } })}>

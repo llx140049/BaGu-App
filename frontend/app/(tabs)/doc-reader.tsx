@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
@@ -269,10 +270,15 @@ export default function DocReaderScreen() {
           text: "删除",
           style: "destructive",
           onPress: async () => {
-            const database = await getDb();
-            await database.runAsync("UPDATE questions SET source_document_id = NULL WHERE source_document_id = ?", [doc.id]);
-            await database.runAsync("DELETE FROM documents WHERE id = ?", [doc.id]);
-            router.back();
+            try {
+              await syncApi.deleteDocuments([doc.id], false);
+              const database = await getDb();
+              await database.runAsync("UPDATE questions SET source_document_id = NULL WHERE source_document_id = ?", [doc.id]);
+              await database.runAsync("DELETE FROM documents WHERE id = ?", [doc.id]);
+              router.back();
+            } catch (error: any) {
+              Alert.alert("删除失败", error?.message || "无法同步删除，请检查登录状态和网络后重试。");
+            }
           },
         },
       ]
@@ -290,7 +296,7 @@ export default function DocReaderScreen() {
   return (
     <View style={[s.container, { backgroundColor: bg }]}>
       <View style={s.header}>
-        <TouchableOpacity accessibilityLabel="返回" style={s.headerButton} onPress={() => router.back()}><Text style={s.backBtn}>{"<"}</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityLabel="返回" style={s.headerButton} onPress={() => router.back()}><Text style={[s.backBtn, { color: c }]}>{"<"}</Text></TouchableOpacity>
         <Text numberOfLines={1} style={[s.headerTitle, { color: c }]}>{doc.title}</Text>
         <View style={s.headerActions}>
           <TouchableOpacity accessibilityLabel="做题" style={s.headerButton} onPress={startPractice}><Play size={21} color={colors.learning} fill={colors.learning} /></TouchableOpacity>
@@ -312,15 +318,15 @@ export default function DocReaderScreen() {
           }
         }}
       >
-        <MarkdownDocument markdown={doc.content} imageBaseUrl={API_BASE} />
+        <MarkdownDocument markdown={doc.content} imageBaseUrl={API_BASE} isDark={isDark} />
       </ScrollView>
       {showMore ? <View style={[s.moreMenu, { backgroundColor: surface }]}>
         {doc.has_original_file ? <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); openOriginalPdf(); }}><FileText size={20} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>阅读原文件</Text></TouchableOpacity> : null}
         <TouchableOpacity style={s.moreRow} onPress={openEditor}><Pencil size={20} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>编辑</Text></TouchableOpacity>
-        <View style={s.moreDivider} />
+        <View style={[s.moreDivider, { backgroundColor: isDark ? colors.borderDark : colors.border }]} />
       </View> : null}
       <Modal visible={showEditor} animationType="slide" onRequestClose={() => setShowEditor(false)}>
-        <View style={[s.editorPage, { backgroundColor: bg }]}>
+        <SafeAreaView style={[s.editorPage, { backgroundColor: bg }]} edges={["top"]}>
           <View style={s.editorHeader}><TouchableOpacity style={s.editorHeaderButton} onPress={() => setShowEditor(false)}><Text style={[s.editorCancelText, { color: colors.textSecondary }]}>取消</Text></TouchableOpacity><Text numberOfLines={1} style={[s.editorHeaderTitle, { color: c }]}>编辑文档</Text><TouchableOpacity style={s.editorHeaderButton} onPress={saveDocumentContent}><Text style={s.editorSaveText}>保存</Text></TouchableOpacity></View>
           <ScrollView ref={editorScrollRef} contentContainerStyle={s.editorContent} keyboardShouldPersistTaps="handled">
             <Text style={[s.editorLabel, { color: colors.textSecondary }]}>文件名</Text>
@@ -329,9 +335,9 @@ export default function DocReaderScreen() {
             <TextInput style={[s.editorInput, { color: c, backgroundColor: surface }]} value={editorCategory} onChangeText={setEditorCategory} placeholder="例如：高等数学/多元函数" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
             {directoryOptions.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.editorDirectoryOptions}>{directoryOptions.map((category) => <TouchableOpacity key={category} style={[s.editorDirectoryChip, { backgroundColor: editorCategory === category ? colors.documentLight : surface }]} onPress={() => setEditorCategory(category)}><Text style={[s.editorDirectoryChipText, { color: editorCategory === category ? colors.document : c }]}>{category}</Text></TouchableOpacity>)}</ScrollView> : null}
             <View style={s.editorModeToggle}><TouchableOpacity style={[s.editorModeOption, editorMode === "edit" && s.editorModeActive]} onPress={() => switchEditorMode("edit")}><Text style={[s.editorModeText, editorMode === "edit" && s.editorModeTextActive]}>编辑</Text></TouchableOpacity><TouchableOpacity style={[s.editorModeOption, editorMode === "preview" && s.editorModeActive]} onPress={() => switchEditorMode("preview")}><Text style={[s.editorModeText, editorMode === "preview" && s.editorModeTextActive]}>预览</Text></TouchableOpacity></View>
-            {editorMode === "edit" ? <TextInput style={[s.contentEditor, { color: c, backgroundColor: surface }]} value={draftContent} onChangeText={setDraftContent} multiline textAlignVertical="top" placeholder="输入文档内容" placeholderTextColor={colors.textTertiary} /> : <View style={[s.contentPreview, { backgroundColor: surface }]}><MarkdownDocument markdown={draftContent || "暂无内容"} imageBaseUrl={API_BASE} /></View>}
+            {editorMode === "edit" ? <TextInput style={[s.contentEditor, { color: c, backgroundColor: surface }]} value={draftContent} onChangeText={setDraftContent} multiline textAlignVertical="top" placeholder="输入文档内容" placeholderTextColor={colors.textTertiary} /> : <View style={[s.contentPreview, { backgroundColor: surface }]}><MarkdownDocument markdown={draftContent || "暂无内容"} imageBaseUrl={API_BASE} isDark={isDark} /></View>}
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
       <Modal visible={showCategoryEditor} transparent animationType="fade" onRequestClose={() => setShowCategoryEditor(false)}>
         <View style={s.modalOverlay}>

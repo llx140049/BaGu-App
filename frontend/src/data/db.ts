@@ -3,8 +3,9 @@ import { SAMPLE_DOCUMENTS } from "./sample-docs";
 import { genId } from "./utils";
 
 let db: any = null;
+let dbPromise: Promise<any> | null = null;
 
-export async function getDb(): Promise<any> {
+async function openDb(): Promise<any> {
   if (db) return db;
 
   if (Platform.OS === "web") {
@@ -97,6 +98,26 @@ export async function getDb(): Promise<any> {
   }
 
   return db;
+}
+
+/**
+ * Opens and migrates SQLite exactly once. Several screens read preferences on
+ * mount, so returning the connection before migrations finish can make native
+ * `prepareAsync` operate on an incomplete handle.
+ */
+export async function getDb(): Promise<any> {
+  if (dbPromise) return dbPromise;
+  if (db) return db;
+
+  dbPromise = openDb()
+    .catch((error) => {
+      db = null;
+      throw error;
+    })
+    .finally(() => {
+      dbPromise = null;
+    });
+  return dbPromise;
 }
 
 /** Removes data that belongs to the signed-in account before another account uses this device. */

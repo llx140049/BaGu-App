@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { Inter_300Light } from "@expo-google-fonts/inter";
+import { useEffect } from "react";
 import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useThemeStore } from "../src/store/useThemeStore";
@@ -22,7 +23,10 @@ export default function RootLayout() {
     "Inter-Light": Inter_300Light,
   });
   const theme = useThemeStore((s) => s.theme);
+  const hydrateTheme = useThemeStore((s) => s.hydrateTheme);
   const isDark = theme === "dark";
+
+  useEffect(() => { hydrateTheme(); }, [hydrateTheme]);
 
   if (!fontsLoaded) return null;
 

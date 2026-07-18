@@ -9,6 +9,7 @@ import { getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { isCardDue, reviewCard } from "../../src/data/sm2";
 import { cardHasTag, parseQuestionTags } from "../../src/data/tagging";
+import { useThemeStore } from "../../src/store/useThemeStore";
 
 type StudyScope = "all" | "mistakes" | "starred" | "due" | "review" | "new";
 type SwipeAction = "unfamiliar" | "mastered" | "favorite";
@@ -25,8 +26,25 @@ function scopeCards(cards: Card[], scope: StudyScope, limit?: string) {
   return cards;
 }
 
+function renderAnswerMarkdown(markdown: string, color: string) {
+  const inline = (value: string) => value.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <Text key={index} style={{ fontWeight: "700" }}>{part.slice(2, -2)}</Text> : part);
+  return markdown.split("\n").map((line, index) => {
+    const value = line.trim();
+    if (!value) return <View key={`space-${index}`} style={{ height: 9 }} />;
+    if (value.startsWith("# ")) return <Text key={`heading-${index}`} style={{ color, fontSize: 22, lineHeight: 32, fontWeight: "700", marginBottom: 8 }}>{inline(value.slice(2))}</Text>;
+    if (value.startsWith("## ")) return <Text key={`heading-${index}`} style={{ color, fontSize: 19, lineHeight: 30, fontWeight: "700", marginBottom: 6 }}>{inline(value.slice(3))}</Text>;
+    if (value.startsWith("- ") || value.startsWith("* ")) return <View key={`bullet-${index}`} style={{ flexDirection: "row", gap: 8, marginBottom: 3 }}><Text style={{ color, fontSize: 18, lineHeight: 29 }}>•</Text><Text style={[styles.answer, { color, flex: 1 }]}>{inline(value.slice(2))}</Text></View>;
+    if (value.startsWith("> ")) return <View key={`quote-${index}`} style={{ borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 12, marginVertical: 3 }}><Text style={[styles.answer, { color }]}>{inline(value.slice(2))}</Text></View>;
+    return <Text key={`text-${index}`} style={[styles.answer, { color }]}>{inline(value)}</Text>;
+  });
+}
+
 export default function StudyScreen() {
   const router = useRouter();
+  const isDark = useThemeStore((state) => state.theme === "dark");
+  const bg = isDark ? colors.bgDark : colors.bg;
+  const surface = isDark ? colors.surfaceDark : colors.surface;
+  const text = isDark ? colors.textDark : colors.text;
   const { documentId, documentTitle, scope: rawScope, limit, questionId, topic, planTags } = useLocalSearchParams<{ documentId?: string; documentTitle?: string; scope?: StudyScope; limit?: string; questionId?: string; topic?: string; planTags?: string }>();
   const scope: StudyScope = rawScope || "all";
   const plannedTags = useMemo(() => {
@@ -177,19 +195,19 @@ export default function StudyScreen() {
     onPanResponderTerminate: () => { gestureAxis.current = null; resetCardPosition(); },
   }), [advanceAfter, answerOffset, guideVisible, resetCardPosition, showAnswer, translation]);
 
-  if (loading) return <View style={styles.page}><Text style={styles.loading}>正在准备卡片…</Text></View>;
-  if (sessionComplete) return <View style={[styles.page, styles.completePage]}><Check size={58} color={colors.success} strokeWidth={2.2} /><Text style={styles.completeTitle}>本轮学习完成</Text><Text style={styles.completeHint}>已完成全部复习</Text><TouchableOpacity onPress={() => router.replace("/(tabs)")}><Text style={styles.homeLink}>返回首页</Text></TouchableOpacity></View>;
-  if (!currentCard) return <View style={[styles.page, styles.completePage]}><Text style={styles.completeTitle}>暂无可学习卡片</Text><Text style={styles.completeHint}>换个专题或学习范围再试试</Text><TouchableOpacity onPress={() => router.back()}><Text style={styles.homeLink}>返回</Text></TouchableOpacity></View>;
+  if (loading) return <View style={[styles.page, { backgroundColor: bg }]}><Text style={styles.loading}>正在准备卡片…</Text></View>;
+  if (sessionComplete) return <View style={[styles.page, styles.completePage, { backgroundColor: bg }]}><Check size={58} color={colors.success} strokeWidth={2.2} /><Text style={[styles.completeTitle, { color: text }]}>本轮学习完成</Text><Text style={styles.completeHint}>已完成全部复习</Text><TouchableOpacity onPress={() => router.replace("/(tabs)")}><Text style={styles.homeLink}>返回首页</Text></TouchableOpacity></View>;
+  if (!currentCard) return <View style={[styles.page, styles.completePage, { backgroundColor: bg }]}><Text style={[styles.completeTitle, { color: text }]}>暂无可学习卡片</Text><Text style={styles.completeHint}>换个专题或学习范围再试试</Text><TouchableOpacity onPress={() => router.back()}><Text style={styles.homeLink}>返回</Text></TouchableOpacity></View>;
 
-  return <View style={styles.page}>
+  return <View style={[styles.page, { backgroundColor: bg }]}>
     {showAnswer ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><Animated.View style={[styles.edgeTint, styles.leftTint, { top: 0, bottom: 0, width: "58%", opacity: leftOpacity }]}><LinearGradient style={styles.gradientFill} colors={["rgba(36, 184, 111, 0.46)", "rgba(36, 184, 111, 0.16)", "rgba(36, 184, 111, 0)"]} locations={[0, 0.45, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} /></Animated.View><Animated.View style={[styles.edgeTint, styles.rightTint, { top: 0, bottom: 0, width: "58%", opacity: rightOpacity }]}><LinearGradient style={styles.gradientFill} colors={["rgba(239, 77, 77, 0.46)", "rgba(239, 77, 77, 0.16)", "rgba(239, 77, 77, 0)"]} locations={[0, 0.45, 1]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} /></Animated.View><Animated.View style={[styles.topTint, { top: 0, height: "52%", opacity: topOpacity }]}><LinearGradient style={styles.gradientFill} colors={["rgba(230, 162, 60, 0.44)", "rgba(230, 162, 60, 0.14)", "rgba(230, 162, 60, 0)"]} locations={[0, 0.45, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} /></Animated.View></View> : null}
-    <View style={styles.topBar}><TouchableOpacity style={styles.topAction} accessibilityLabel="返回" onPress={() => router.back()}><ArrowLeft size={25} color={colors.text} /></TouchableOpacity><View style={styles.progressBlock}><Text style={styles.progressText}>{progress}</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${(Math.min(currentIndex + 1, cards.length) / cards.length) * 100}%` }]} /></View></View><TouchableOpacity style={styles.topAction} accessibilityLabel="更多学习设置" onPress={() => Alert.alert("学习设置", "更多学习设置将在下一阶段开放")}><MoreHorizontal size={22} color={colors.text} /></TouchableOpacity></View>
+    <View style={styles.topBar}><TouchableOpacity style={styles.topAction} accessibilityLabel="返回" onPress={() => router.back()}><ArrowLeft size={25} color={text} /></TouchableOpacity><View style={styles.progressBlock}><Text style={[styles.progressText, { color: text }]}>{progress}</Text><View style={[styles.progressTrack, { backgroundColor: isDark ? colors.borderDark : colors.border }]}><View style={[styles.progressFill, { width: `${(Math.min(currentIndex + 1, cards.length) / cards.length) * 100}%` }]} /></View></View><TouchableOpacity style={styles.topAction} accessibilityLabel="更多学习设置" onPress={() => Alert.alert("学习设置", "更多学习设置将在下一阶段开放")}><MoreHorizontal size={22} color={text} /></TouchableOpacity></View>
     {documentTitle ? <Text numberOfLines={1} style={styles.documentTitle}>{documentTitle}</Text> : null}
     <View style={styles.cardStage}>
-      <Animated.View {...(showAnswer ? panResponder.panHandlers : {})} style={[styles.card, { transform: [{ translateX: translation.x }, { translateY: translation.y }, { rotate }] }]}>
+      <Animated.View {...(showAnswer ? panResponder.panHandlers : {})} style={[styles.card, { backgroundColor: surface, transform: [{ translateX: translation.x }, { translateY: translation.y }, { rotate }] }]}>
         {showAnswer ? <ScrollView showsVerticalScrollIndicator={false} onScroll={(event) => setAnswerOffset(event.nativeEvent.contentOffset.y)} scrollEventThrottle={16} contentContainerStyle={styles.answerContent}>
-          <Text style={styles.category}>{currentCard.cat.split("/")[0]}</Text><Text style={styles.answer}>{currentCard.a}</Text>
-        </ScrollView> : <TouchableOpacity activeOpacity={1} accessibilityLabel="查看答案" style={styles.frontContent} onPress={revealAnswer}><Text style={[styles.category, styles.frontCategory]}>{currentCard.cat.split("/")[0]}</Text><Text style={styles.question}>{currentCard.q}</Text></TouchableOpacity>}
+          <Text style={styles.category}>{currentCard.cat.split("/")[0]}</Text>{renderAnswerMarkdown(currentCard.a, text)}
+        </ScrollView> : <TouchableOpacity activeOpacity={1} accessibilityLabel="查看答案" style={styles.frontContent} onPress={revealAnswer}><Text style={[styles.category, styles.frontCategory]}>{currentCard.cat.split("/")[0]}</Text><Text style={[styles.question, { color: text }]}>{currentCard.q}</Text></TouchableOpacity>}
       </Animated.View>
       {showAnswer ? <><Animated.View pointerEvents="none" style={[styles.feedback, styles.leftFeedback, { opacity: leftOpacity }]}><Check size={38} color={colors.success} /><Text style={styles.goodText}>熟悉</Text></Animated.View><Animated.View pointerEvents="none" style={[styles.feedback, styles.rightFeedback, { opacity: rightOpacity }]}><X size={40} color={colors.danger} /><Text style={styles.badText}>不熟悉</Text></Animated.View><Animated.View pointerEvents="none" style={[styles.feedback, styles.topFeedback, { opacity: topOpacity }]}><Star size={27} color={colors.learning} fill={colors.learning} /><Text style={styles.starText}>收藏</Text></Animated.View></> : null}
     </View>

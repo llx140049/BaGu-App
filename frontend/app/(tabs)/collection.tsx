@@ -75,7 +75,7 @@ export default function CollectionScreen() {
       {questions.map((question) => <TouchableOpacity key={question.id} style={[styles.questionRow, { backgroundColor: surface }, selectedIds.has(question.id) && styles.questionRowSelected]} onLongPress={() => setSelectedIds(new Set([question.id]))} onPress={() => selectedIds.size > 0 ? toggleSelection(question.id) : router.push({ pathname: "/(tabs)/question-editor", params: { id: question.id } })}>
         <View style={styles.questionIcon}><BookOpen size={18} color={colors.primary} /></View>
         <View style={styles.rowCopy}><Text numberOfLines={1} style={[styles.questionText, { color: c }]}>{question.q}</Text><View style={styles.questionTags}>{question.tagPaths.map((tag) => <View key={`${question.id}-${tag}`} style={styles.questionTag}><Tag size={12} color={colors.primary} strokeWidth={2.2} /><Text numberOfLines={1} style={styles.questionTagText}>{tag}</Text></View>)}</View></View>
-        {selectedIds.size > 0 ? <CheckCircle2 size={21} color={selectedIds.has(question.id) ? colors.primary : "#c8c9cf"} fill={selectedIds.has(question.id) ? colors.primaryLight : "transparent"} /> : null}
+        {selectedIds.size > 0 ? <CheckCircle2 size={21} color={selectedIds.has(question.id) ? colors.primary : "#c8c9cf"} fill={selectedIds.has(question.id) ? "#fff" : "transparent"} /> : null}
       </TouchableOpacity>)}
       {questions.length === 0 ? <Text style={styles.empty}>{emptyText}</Text> : null}
     </ScrollView>

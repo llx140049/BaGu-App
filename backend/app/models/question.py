@@ -18,11 +18,16 @@ class Document(Base):
     content = Column(Text, nullable=False, default="")
     source = Column(String(255), default="")
     source_file_name = Column(String(255), default="")
+    original_file_key = Column(String(255), default="")
     tags = Column(JSON, default=list)
     scroll_offset = Column(Float, nullable=False, default=0)
     reading_progress = Column(Float, nullable=False, default=0)
     last_read_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def has_original_file(self) -> bool:
+        return bool(self.original_file_key)
 
 
 class Question(Base):

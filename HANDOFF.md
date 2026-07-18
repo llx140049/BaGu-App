@@ -1,213 +1,194 @@
-# BaguApp 开发交接文档
+# BaguApp 项目交接文档
 
-更新时间：2026-07-16
+更新日期：2026-07-18
 当前分支：`master`
-最近已提交：`b035181 feat: 支持题目多标签学习范围`
+最近已提交版本：`2345095 fix: 同步已有题目的标签更新`
 
-> 当前工作区是 **dirty worktree**。本轮 UI 与学习计划功能已实现但尚未提交；继续开发时必须保留这些改动，不要使用 `git reset --hard`、`git checkout --` 等清理命令。
+> **重要：工作区是 dirty worktree。** 其中包含多轮已实现但未提交的功能。继续开发必须保留现有改动；禁止使用 `git reset --hard`、`git checkout --`、批量删除，或清理 `frontend/android/`、`backend/bagu.db`、`.tmp-goodtime/`、`design/`。
 
-## 1. 项目定位与技术栈
+## 1. 项目与技术栈
 
-BaguApp 是一款本地优先的移动端学习卡片 App，包含题库、文档库、学习计划、翻卡学习、收藏和错题复习。
+BaguApp 是 Android 优先的面试八股学习 App：用户导入 PDF/Markdown/文本，保存可阅读原文，使用 AI 生成题目，以标签、SM-2 复习和学习计划完成学习。
 
-- 前端：Expo Router + React Native + TypeScript
-- 本地数据：Android 使用 Expo SQLite；Web 使用 `localStorage` 模拟数据库
-- 后端：FastAPI + SQLite，负责登录、上传、题目生成与同步
-- UI 基调：Apple Settings / Things 3 / Goodtime / Bear；白（浅灰）底、简洁列表、少量暖橙色强调，不做后台管理式大卡片
-- 图标：统一使用 `lucide-react-native`
-- 字体：`MiSans-Regular`、`MiSans-Medium`、`MiSans-Semibold`；首页数字另使用 `Inter-Light`
+| 层 | 当前技术 |
+| --- | --- |
+| 前端 | Expo SDK 54、React Native 0.81、TypeScript、Expo Router |
+| 本地数据 | Native：Expo SQLite；Web：`localStorage` 适配层 |
+| 后端 | FastAPI、SQLAlchemy、Alembic；本地实际使用 SQLite |
+| AI | DeepSeek `deepseek-chat` |
+| PDF | `pdfplumber`（题目文本）、PyMuPDF4LLM（转带图片 Markdown） |
+| Android 原生 PDF | `react-native-pdf`、`react-native-blob-util` |
 
-`app/(tabs)` 只是历史目录名，实际是 Stack 路由，**没有底部 Tab Bar**。
+设计基调：白/浅灰背景、深色文字、暖橙强调、文档绿色；全局 MiSans。不要把页面改成后台管理系统或 Material 默认风格。
 
-## 2. 运行与验证
+## 2. 当前最重要的运行状态
 
-### 前端
+### Android 开发包已可安装
+
+- Android 真机开发包已构建并安装，包名为 `com.bagumemory.app`。
+- 本次构建曾因 Java 8 失败；已改用真正的 JDK 17，之后构建成功。
+- `frontend/android/` 是 Expo 原生预构建产物，虽被 Git 忽略但必须保留。
+- 当前连接过的设备序列号为 `GILFK7Z95P4XMJYL`（设备型号可能会变化，以 `adb devices` 为准）。
+
+### 手机启动慢的已知原因
+
+开发包的 JS 由电脑上的 Metro 服务提供。USB 重连、重启 adb 或 Metro 后，`adb reverse` 会丢失，手机会卡在启动/加载页。
+
+启动前端并恢复转发：
 
 ```powershell
 cd C:\Users\18253\Documents\BaguApp\frontend
-npm.cmd run start
+npx expo start --offline
+
+# 可在任意目录执行；手机必须显示为 device
+adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8001 tcp:8001
+adb reverse --list
 ```
 
-常用类型检查：
+然后彻底关闭并重新打开手机上的 BaguApp。首次重新打包通常需要 10～30 秒；若 `adb reverse --list` 为空，优先重新执行上面两行。
 
-```powershell
-cd C:\Users\18253\Documents\BaguApp\frontend
-npx.cmd tsc --noEmit
-```
+`EXPO_PUBLIC_API_URL` 已在本机未提交的 `frontend/.env.local` 设置为 `http://127.0.0.1:8001`，因此 Android 必须有 `8001` 的转发。
 
-截至本次交接，以上 TypeScript 检查已通过。
+### 后端运行环境
 
-### 后端
+- 原 `backend/venv` 已损坏/不可用；当前使用 `backend/venv-runtime`。
+- 不要把该虚拟环境提交到 Git。
 
 ```powershell
 cd C:\Users\18253\Documents\BaguApp\backend
-venv\Scripts\python.exe -m alembic -c alembic.ini upgrade head
-venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+.\venv-runtime\Scripts\python.exe -m alembic upgrade head
+.\venv-runtime\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
-健康检查：`http://localhost:8001/api/health`
+健康检查：`http://127.0.0.1:8001/api/health`。
 
-Android 真机调用 API 的地址在 `frontend/src/services/api.ts`；换网络后需要更新局域网 IP 或设置 `EXPO_PUBLIC_API_URL`。
+## 3. 已完成功能
 
-## 3. 当前路由与页面状态
+### 导入、文档和学习
 
-| 路由 | 文件 | 当前职责 |
+- 支持导入 `.pdf`、`.md`、`.markdown`、`.txt`、`.text`，最大 100MB。
+- 导入以预览流程完成：仅导入原文 / 导入并生成题目；可预览、编辑分类后确认保存。
+- 文档库支持文件夹、搜索、长按多选、批量删除及可选删除关联题目。
+- 文档阅读页支持 Markdown/LaTeX、正文编辑和预览切换。
+- 移除了“学习方式 / 智能安排”以及文档阅读页“分享”“导出”入口。
+- 学习计划具备重置/同步目标的实现；题目支持多标签、收藏、错题与 SM-2 复习。
+
+### 原始 PDF 阅读
+
+- PDF 确认导入后，会保存原始文件键 `documents.original_file_key`。
+- 文档页“阅读原文件”打开 App 内 PDF 阅读器：缩放、双击缩放、页码；并有“用其他应用打开”兜底。
+- 原始 PDF 获取接口：`GET /api/v1/documents/{document_id}/original-file`，需要 JWT。
+- 旧文档没有 `original_file_key`，需重新导入才能使用原文件阅读。
+- 关键文件：
+  - `frontend/app/pdf-reader.tsx`
+  - `frontend/src/components/PdfDocument.native.tsx`
+  - `frontend/app/(tabs)/doc-reader.tsx`
+  - `backend/app/api/v1/documents.py`
+  - `backend/app/api/v1/upload.py`
+  - `backend/migrations/versions/20260717_03_original_file.py`
+
+### PDF 转为 Markdown（正在回归验证）
+
+用户要求：导入 PDF 后自动转为**保留原图**的 Markdown；不再提供旧的“直接解析文字版本”；同时保留“浏览原 PDF”。当前实现：
+
+- `backend/app/services/pdf_service.py` 使用 `pymupdf4llm.to_markdown(..., write_images=True)` 生成 Markdown 及图片。
+- 图片保存至 `backend/uploads/{file_id}-assets/`，Markdown 使用 `{{API_BASE}}/api/v1/document-assets/...` 引用。
+- 后端提供图片资产接口：`GET /api/v1/documents/document-assets/{asset_dir}/{filename}`。
+- 前端 `MarkdownDocument.native.tsx` 会替换 `{{API_BASE}}`；并针对旧数据中出现过的“双重 API URL”做兼容修正。
+- PDF 原始文件页已经在真机成功显示过。
+
+**尚未真正验收：** 用户此前仍反馈过“图片未加载”和“字体不统一”。后续必须在真机重新导入一份含图片的 PDF，观察 Network/后端日志，确认图片 200、正文和代码块的渲染。
+
+### Markdown 字体与样式
+
+- Native Markdown 使用 WebView，加载 `assets/fonts/MiSans-Regular.otf`；已加入 `expo-asset`。
+- `MarkdownDocumentHtml.ts` 强制 WebView 正文、代码与所有子节点使用 MiSans，并调整代码块/文字块配色。
+- 此改动已通过 TypeScript 检查，但**尚未获得用户的最终真机视觉确认**。
+
+### AI 题目答案质量（最新改动）
+
+`backend/app/services/deepseek.py` 的 `SYSTEM_PROMPT` 已强化，生成的 `a` 字段要求为 Markdown，并使用：
+
+1. **结论**
+2. **核心原理**
+3. **关键要点**
+4. **易错点与追问**（如适用）
+5. **示例**（原文有明确示例时才生成）
+
+同时要求模型不编造原文外信息，信息不足时写“原文未说明”。该文件已通过 `py_compile`。
+
+## 4. 导入类型现状
+
+| 类型 | 支持情况 | 处理方式 |
 | --- | --- | --- |
-| 首页 | `frontend/app/(tabs)/index.tsx` | 极简待学习数量与“开始学习”，左下弱化菜单 |
-| 知识库 | `hub.tsx` | 今日学习摘要、题库、文档库、统计、设置、帮助入口 |
-| 题库 | `questions.tsx` | 一级标签列表；有二级标签时先进入二级标签列表，否则直接题目列表 |
-| 标签/题目列表 | `topic.tsx` | 题目列表、长按批量操作、右上学习入口、进入编辑题目 |
-| 编辑题目 | `question-editor.tsx` + `src/components/QuestionEditor.tsx` | 独立编辑页、标签 Chips、Markdown/LaTex 预览、更多菜单 |
-| 学习计划 | `study-plan.tsx` | 今日进度/待复习、学习范围、内容选择、低频设置菜单 |
-| 单项计划设置 | `study-plan-item.tsx` | 单个一级/二级标签的计划设置；关闭加入计划会移除该项 |
-| 翻卡学习 | `study.tsx` | 新学、复习、收藏、错题等范围学习；手势评分 |
-| 文档库 | `documents.tsx` | 文件夹与文档浏览 |
-| 文档阅读 | `doc-reader.tsx` | Markdown、LaTeX、PDF 阅读 |
-| 收藏/错题/复习 | `collection.tsx` | 列表、编辑、长按批量操作、右上开始学习 |
-| 学习统计 | `stats.tsx` | 学习记录统计 |
-| 设置/我的 | `settings.tsx` | 轻量列表入口、每日新题目标、深色模式 |
+| PDF | 支持 | PyMuPDF4LLM 转带原图 Markdown；另保存原文件 |
+| Markdown (`.md`/`.markdown`) | 支持 | UTF-8 原样读取 |
+| 文本 (`.txt`/`.text`) | 支持 | UTF-8 原样读取 |
+| Word (`.doc`/`.docx`) | **不支持** | 会提示文件格式不支持 |
+| PPT/Excel/图片 | **不支持** | 会提示文件格式不支持 |
 
-所有页面已在 `frontend/app/(tabs)/_layout.tsx` 注册。根布局 `frontend/app/_layout.tsx` 负责安全区、Web 手机画布与字体加载。
+前端文件选择器、Android MIME 限制及后端格式校验目前一致。Markdown 和 UTF-8 文本解析已做直接验证。旧式 GBK 编码文本可能乱码；尚未做编码探测。
 
-## 4. 最近完成的产品与 UI 约定
+## 5. 数据库、迁移与关键接口
 
-### 知识库首页
+### 后端
 
-- 标题下有 `TodayStudyCard`（`src/components/TodayStudyCard.tsx`），点击进入学习计划。
-- 卡片展示为 `已学习数 /（今日待学习数 + 待复习数）`，不显示“已学习/待学习”文字。
-- 卡片底部保持学习范围名称（最多 3 项，超出显示“等 N 项”），不要替换为待学习/复习数。
-- 卡片不再显示“查看计划”；右箭头即可表达可进入。
-- 题库与文档库是一级入口；统计、设置、帮助是次级入口。无大分组卡片、无明显阴影。
+- `backend/migrations/versions/20260717_03_original_file.py` 为 `documents` 添加 `original_file_key`。
+- 本地数据库为未跟踪 `backend/bagu.db`；此前缺列问题已修复。不可提交或删除。
+- 上传入口仍名为 `POST /api/v1/upload/pdf`，但实际接收 PDF、Markdown、TXT。后续重命名会涉及前后端，暂不做无关重构。
+- PDF 图片资产路由必须在 `/api/v1/documents/{document_id}` 这类参数路由之前，当前已处理。
 
-### 学习计划
+### 前端本地库
 
-- 顶部仅保留两组核心信息：
-  - 左侧：`已完成 / 每日目标`，下方橙色“今日进度”与橙色实心三角。
-  - 右侧：待复习数量，下方蓝色“待复习”与蓝色实心三角。
-- 橙色三角启动学习计划标签范围内的**新卡片**；蓝色三角启动同一范围内的**到期复习卡片**。
-- 页面主区标题为“学习范围”；每项只显示标签名和“今日完成 n / n”，不再显示“n 张/天”。
-- 点击“添加学习内容”先选一级标签，再选择“全部一级标签”或一个二级标签；标签最大两级。
-- 不加入计划的内容在单项设置页关闭后会直接从计划列表移除。
-- 右上 `⋯` 仅收纳“学习方式”和“重置学习进度”；重置带二次确认。
-- 已删除原来的底部“待复习”板块、重复目标设置与底部学习方式设置。
+- Native/Web 数据库均已增加 `documents.has_original_file`；修改字段时必须同步 `frontend/src/data/db.ts` 和 `frontend/src/data/db.web.ts`。
 
-### 题库、标签与批量操作
+## 6. 已知问题与建议优先级
 
-- 题目支持多标签：`questions.tags` 为 JSON 字符串数组，格式如 `一级/二级`；`cat` 仅兼容旧数据和默认主标签。
-- 一级标签学习范围包含它的直系二级标签；学习页按题目 ID 去重。
-- 标签详情右上三角会打开学习范围 Bottom Sheet；题目列表支持长按进入批量操作。
-- 批量模式触发背景为浅灰，取消文字为黑色。
-- 题目下方显示该题目的标签，而非“题目”占位文字；标签使用 Lucide 的 Tag 图标。
+1. **真机回归 PDF 转 Markdown**：重新导入有图片的 PDF；确认图片加载、长文高度、MiSans 字体、代码块对比度和原 PDF 阅读。
+2. 若图片依旧失败，先检查：后端是否运行、`adb reverse tcp:8001 tcp:8001`、接口 `/api/v1/documents/document-assets/...` 是否返回 200，以及文档内容内的图片 URL 是否被重复拼接。
+3. **完善 AI 长文档处理**：当前仍将最多 400,000 字符一次性发送 DeepSeek；下一步可按标题/页分段生成、合并并去重，避免后半段遗漏。用户只要求并已实现了“答案结构化”第一项，未开始分段去重。
+4. 需要支持常见办公文档时，优先补 `.docx`，保持最小依赖与导入流程一致。
+5. 重新构建原生包仅在原生依赖或 Android 配置改变后需要；普通 TS/样式改动使用 Metro 热更新即可。
 
-### 编辑题目
-
-- 不使用大型 Bottom Sheet，编辑为独立页。
-- 顶部：`返回 / 编辑题目 / ⋯ / 完成`；“完成”保存并返回。
-- 无底部保存、取消、删除栏。返回存在修改时提示放弃修改。
-- `⋯` 菜单：收藏、复制题目、删除题目（删除二次确认）。
-- 标签采用已选 Chips + “添加标签”；不展示全局标签管理表单。
-- 题目、答案分别是浅灰容器（无显著阴影）；答案支持 Markdown/LaTeX 编辑与预览。
-
-### 收藏、设置与图标
-
-- 收藏夹样式沿用题库页：可单击编辑、长按批量操作、右上三角学习。
-- 收藏列表中的图标是“取消收藏”语义（`StarOff`），不是普通收藏状态。
-- 设置页使用轻量 Section/list：学习工具、账号、学习设置、外观；每日目标以 Bottom Sheet 选择 5/10/20/30/50 题；保留深色模式。
-- 项目中需要图标的位置已改用 Lucide，不应再添加 Unicode/文本占位图标。
-
-## 5. 学习计划与学习范围数据实现
-
-核心文件：`frontend/src/data/study-plan.ts`
-
-```ts
-interface StudyPlanItem {
-  id: string;
-  tag: string;        // "一级" 或 "一级/二级"
-  dailyTarget: number;
-  enabled: boolean;
-  mode: "smart";
-  range: "all";
-}
-
-interface StudyPlan {
-  dailyTarget: number;
-  items: StudyPlanItem[];
-}
-```
-
-- 计划持久化在 `app_settings`，key 为 `study_plan`。
-- `getTodayStudySummary()` 使用当天 `study_records.count` 作为已学习数量。
-- `getPlanReviewCount()` 统计已加入计划范围内、到期且未掌握的卡片。
-- `getTodayItemProgress()` 依据当天 `last_review` 统计各范围完成数；一级标签会包含下级标签。
-- `study-plan.tsx` 点击三角时传递 `planTags` JSON 到 `study.tsx`。
-- `study.tsx` 解析 `planTags`，与 `topic` 条件共同筛选后，再应用 `new` 或 `review` scope。因此后续修改学习入口时必须保留该过滤链路。
-
-注意：当前“今日进度”的 `已完成` 使用当天总 `study_records.count`，其中可能包含复习；用户已经明确：顶部 `/ N` 的 `N` 只应是今日待学习目标，不包含待复习数。
-
-## 6. 关键数据与工具文件
-
-```text
-frontend/src/data/tagging.ts          标签解析、规范化、父子范围匹配
-frontend/src/data/study-plan.ts       计划持久化与今日统计
-frontend/src/data/db.ts               Native SQLite 初始化/迁移
-frontend/src/data/db.web.ts           Web localStorage SQL 适配
-frontend/src/data/sm2.ts              复习到期与评分逻辑
-frontend/src/store/useCardStore.ts    翻卡会话状态
-frontend/src/tokens/colors.ts         全局颜色 Token
-frontend/src/components/PrototypeUI.tsx  BackButton 等基础 UI
-frontend/src/components/StudyScopeBottomSheet.tsx  标签页学习范围选择
-frontend/src/components/QuestionEditor.tsx  编辑题目内容与预览
-```
-
-`questions` 关键字段：
-
-```text
-id, user_id, cat, q, a, source, source_document_id, tags, created_at
-```
-
-标签规则：
-
-- `tags` 是正式多标签来源，JSON 数组。
-- 路径最多两级：`一级` 或 `一级/二级`。
-- 旧数据无 `tags` 时自动回退为 `cat`，无需手工迁移。
-- 保存题目时 `cat` 同步为 `tags[0]`，保证旧流程兼容。
-
-## 7. 已知限制与下一轮建议
-
-1. **优先真机验证学习计划三角入口**：建立含一级、二级标签的计划，分别点击橙/蓝三角，确认新学与到期复习都只出现计划范围内卡片。
-2. `study_records.count` 目前是总完成数；若未来需要严格区分“新学完成”和“复习完成”，需扩展统计字段或查询口径，避免只靠总数。
-3. 多标签目前主要是本地能力。跨设备同步前，需要审查后端 `Question` 序列化与 `sync` push/pull 是否完整携带 `tags`。
-4. Markdown/LaTeX 编辑预览已实现，但长公式、复杂表格和 Android 真机输入体验仍应回归测试。
-5. 深色模式已保留入口，但新加页面的逐项深色视觉还需持续检查。
-6. 避免引入大型 UI 库；优先使用现有 React Native 组件、现有 Token 与 Lucide。
-
-## 8. 工作区约束
-
-当前未跟踪的本地内容，保留但不要提交：
-
-```text
-.tmp-goodtime/
-backend/bagu.db
-design/
-```
-
-当前还有一批与本轮 UI、学习计划相关的未提交前端改动，属于继续开发的基线。提交前建议：
+## 7. 常用检查命令
 
 ```powershell
+# 工作区（不要清理改动）
+cd C:\Users\18253\Documents\BaguApp
 git status --short
 git diff --check
-git add frontend HANDOFF.md
-git diff --cached --check
-git commit -m "feat: 完善学习计划与知识库体验"
+
+# 前端类型检查
+cd C:\Users\18253\Documents\BaguApp\frontend
+npx.cmd tsc --noEmit
+
+# 后端语法检查
+cd C:\Users\18253\Documents\BaguApp\backend
+.\venv-runtime\Scripts\python.exe -m py_compile app\services\deepseek.py app\services\pdf_service.py
+
+# 设备与转发状态
+adb devices
+adb reverse --list
 ```
 
-除非用户明确要求，不要提交数据库、临时素材，且不要清理已有 dirty worktree。
+## 8. 当前工作区概况
+
+已知修改涉及文档导入、文档库、原始 PDF、PDF Markdown、DeepSeek 提示词、学习计划、标签、前端样式与依赖；还有未跟踪的迁移、`pdf-reader.tsx`、PDF 组件、导入流程组件、日志、SQLite 和虚拟环境。
+
+提交前必须按功能拆分；除非用户明确授权，**不要自行提交、推送或删除任何文件**。
 
 ## 9. 新对话可直接使用的提示词
 
 ```text
-请先阅读 C:\Users\18253\Documents\BaguApp\HANDOFF.md，并检查 git status。
-在现有 dirty worktree 上继续开发，保留所有未提交改动；不要提交或删除 backend/bagu.db、.tmp-goodtime、design。
-这是 Android 优先的 Expo App，先理解现有实现并做最小范围修改。完成后运行：
-cd frontend; npx.cmd tsc --noEmit
+请先完整阅读 C:\Users\18253\Documents\BaguApp\HANDOFF.md，并执行 git status --short。
+
+这是 dirty worktree：保留所有未提交改动。不要执行 reset、checkout、清理或删除；尤其不要删除 frontend/android、backend/bagu.db、backend/venv-runtime、.tmp-goodtime、design。
+
+当前优先任务：在 Android 真机回归导入一份含图片的 PDF，验证 PDF 自动转带原图 Markdown、图片接口、MiSans 正文字体/代码块样式与“浏览原 PDF”。
+
+运行后端：cd backend; .\venv-runtime\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001。
+运行前端：cd frontend; npx expo start --offline；然后在任意目录执行 adb reverse tcp:8081 tcp:8081 和 adb reverse tcp:8001 tcp:8001。
+
+继续开发前先理解现有实现，只做最小范围修改。修改后至少运行 cd frontend; npx.cmd tsc --noEmit。
 ```

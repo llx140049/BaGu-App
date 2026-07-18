@@ -29,6 +29,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 4,
   },
-  text: { fontSize: 12, fontWeight: "600" },
-  count: { fontSize: 11 },
+  text: { fontFamily: "MiSans-Medium", fontSize: 12 },
+  count: { fontFamily: "MiSans-Regular", fontSize: 11 },
 });

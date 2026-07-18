@@ -3,11 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, Switch, TextInput, Alert, Act
 import { useRouter } from "expo-router";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
-import { getDb } from "../../src/data/db";
+import { clearAccountData, getDb } from "../../src/data/db";
 import { genId } from "../../src/data/utils";
 import { API_BASE, setApiAuthToken } from "../../src/services/api";
 import { BackButton } from "../../src/components/PrototypeUI";
 import { ChevronRight } from "lucide-react-native";
+import { getStudyPlan, saveStudyPlan } from "../../src/data/study-plan";
 
 async function apiRequest(path: string, body?: any, token?: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -93,6 +94,8 @@ export default function SettingsScreen() {
       "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       ["daily_new_target", String(target)]
     );
+    const plan = await getStudyPlan();
+    await saveStudyPlan({ ...plan, dailyTarget: target });
     setDailyNewTarget(String(target));
     Alert.alert("已保存", `每日新题目标：${target} 题`);
   };
@@ -102,6 +105,8 @@ export default function SettingsScreen() {
       "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       ["daily_new_target", String(target)]
     );
+    const plan = await getStudyPlan();
+    await saveStudyPlan({ ...plan, dailyTarget: target });
     setDailyNewTarget(String(target));
     setGoalPickerVisible(false);
   };
@@ -122,6 +127,10 @@ export default function SettingsScreen() {
         localStorage?.setItem("bagu_sync_email", data.email);
       } catch {}
       const database = await getDb();
+      const previousAccount = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["auth_email"]);
+      if (previousAccount?.value && previousAccount.value !== data.email) {
+        await clearAccountData();
+      }
       await database.runAsync(
         "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         ["auth_token", data.token]
@@ -138,16 +147,17 @@ export default function SettingsScreen() {
     setAuthLoading(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setToken("");
     setApiAuthToken("");
     setUserEmail("");
     setLastSync("");
     try { localStorage?.removeItem("bagu_sync_token"); localStorage?.removeItem("bagu_sync_email"); } catch {}
-    getDb().then(async (database) => {
-      await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ["auth_token", ""]);
-      await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ["auth_email", ""]);
-    }).catch(() => {});
+    try {
+      await clearAccountData();
+    } catch {
+      Alert.alert("退出失败", "本机账户缓存未能清理，请重试。");
+    }
   };
 
   const handleSync = async () => {
@@ -164,7 +174,7 @@ export default function SettingsScreen() {
         "SELECT id, question_id, level, correct, incorrect, last_review, next_review, is_starred FROM card_progress"
       );
       const allDocuments: any[] = await database.getAllAsync(
-        "SELECT id, title, cat, content, source, tags, scroll_offset, reading_progress, last_read_at, created_at FROM documents"
+        "SELECT id, title, cat, content, source, has_original_file, tags, scroll_offset, reading_progress, last_read_at, created_at FROM documents"
       );
       const localSettings: any[] = await database.getAllAsync("SELECT key, value FROM app_settings");
       const localStudyRecords: any[] = await database.getAllAsync(
@@ -238,14 +248,14 @@ export default function SettingsScreen() {
         );
         if (!existing) {
           await database.runAsync(
-            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, tags, scroll_offset, reading_progress, last_read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString()]
+            "INSERT OR IGNORE INTO documents (id, title, cat, content, source, has_original_file, tags, scroll_offset, reading_progress, last_read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [doc.id, doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", doc.has_original_file ? 1 : 0, JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString()]
           );
           importedDocuments++;
         } else {
           await database.runAsync(
-            "UPDATE documents SET title = ?, cat = ?, content = ?, source = ?, tags = ?, scroll_offset = ?, reading_progress = ?, last_read_at = ?, created_at = ? WHERE id = ?",
-            [doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString(), doc.id]
+            "UPDATE documents SET title = ?, cat = ?, content = ?, source = ?, has_original_file = ?, tags = ?, scroll_offset = ?, reading_progress = ?, last_read_at = ?, created_at = ? WHERE id = ?",
+            [doc.title, doc.cat || "导入文档", doc.content || "", doc.source || "", doc.has_original_file ? 1 : 0, JSON.stringify(doc.tags || []), doc.scroll_offset || 0, doc.reading_progress || 0, doc.last_read_at || null, doc.created_at || new Date().toISOString(), doc.id]
           );
         }
       }

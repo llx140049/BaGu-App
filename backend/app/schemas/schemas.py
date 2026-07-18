@@ -37,6 +37,7 @@ class DocumentResponse(BaseModel):
     content: str = ""
     source: Optional[str] = ""
     source_file_name: Optional[str] = ""
+    has_original_file: bool = False
     tags: List[str] = []
     scroll_offset: float = 0
     reading_progress: float = 0

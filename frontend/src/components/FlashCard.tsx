@@ -92,9 +92,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  categoryText: { fontSize: 12, fontWeight: "600" },
-  text: { fontSize: 18, lineHeight: 26, textAlign: "center" },
-  hint: { fontSize: 12, position: "absolute", bottom: 16 },
+  categoryText: { fontFamily: "MiSans-Medium", fontSize: 12 },
+  text: { fontFamily: "MiSans-Regular", fontSize: 18, lineHeight: 26, textAlign: "center" },
+  hint: { fontFamily: "MiSans-Regular", fontSize: 12, position: "absolute", bottom: 16 },
   actions: { flexDirection: "row", gap: 12, marginTop: 16 },
   actionBtn: {
     flex: 1,
@@ -102,5 +102,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
-  actionText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  actionText: { color: "#fff", fontFamily: "MiSans-Medium", fontSize: 15 },
 });

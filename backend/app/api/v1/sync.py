@@ -120,6 +120,7 @@ async def sync_push(
                     "cat": document.cat,
                     "content": document.content,
                     "source": document.source,
+                    "has_original_file": bool(document.original_file_key),
                     "tags": document.tags or [],
                     "scroll_offset": document.scroll_offset or 0,
                     "reading_progress": document.reading_progress or 0,

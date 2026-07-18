@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { BarChart3, BookOpenCheck, ChevronRight, CircleHelp, FileText, Settings, type LucideIcon } from "lucide-react-native";
+import { BarChart3, BookOpenCheck, ChevronRight, CircleHelp, CircleUserRound, ExternalLink, FileText, GitBranch, Mail, type LucideIcon } from "lucide-react-native";
 import { colors } from "../../src/tokens/colors";
 import { BackButton } from "../../src/components/PrototypeUI";
 import { getDb } from "../../src/data/db";
@@ -23,6 +23,14 @@ export default function KnowledgeHubScreen() {
   const [counts, setCounts] = useState({ questions: 0, documents: 0 });
   const [todaySummary, setTodaySummary] = useState<TodayStudySummary>({ completed: 0, target: 0, items: [], state: "no-plan" });
   const [reviewCount, setReviewCount] = useState(0);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const openLink = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("无法打开链接", "请稍后重试。");
+    }
+  };
   const loadCounts = useCallback(async () => {
     const database = await getDb();
     const [questionRow, documentRow] = await Promise.all([
@@ -46,11 +54,30 @@ export default function KnowledgeHubScreen() {
       <View style={styles.secondaryList}>
         <HubItem icon={BarChart3} iconColor="#8A79D9" title="学习统计" onPress={() => router.push("/(tabs)/stats")} />
         <View style={styles.divider} />
-        <HubItem icon={Settings} iconColor="#7E8797" title="设置" onPress={() => router.push("/(tabs)/settings")} />
+        <HubItem icon={CircleUserRound} iconColor="#D97992" title="我的" onPress={() => router.push("/(tabs)/settings")} />
         <View style={styles.divider} />
-        <HubItem icon={CircleHelp} iconColor="#9A9A9A" title="帮助与反馈" onPress={() => Alert.alert("帮助与反馈", "该功能将在下一阶段完善")} />
+        <HubItem icon={CircleHelp} iconColor="#9A9A9A" title="帮助与反馈" onPress={() => setHelpVisible(true)} />
       </View>
     </ScrollView>
+    <Modal visible={helpVisible} transparent animationType="slide" onRequestClose={() => setHelpVisible(false)}>
+      <Pressable style={styles.sheetOverlay} onPress={() => setHelpVisible(false)}>
+        <Pressable style={styles.sheet} onPress={() => undefined}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>帮助与反馈</Text>
+          <Text style={styles.sheetIntro}>欢迎通过邮件反馈问题或提出功能建议。</Text>
+          <TouchableOpacity style={styles.contactRow} onPress={() => openLink("mailto:lanxil96@gmail.com")}>
+            <View style={styles.contactIcon}><Mail size={20} color={colors.primary} /></View>
+            <View style={styles.contactCopy}><Text style={styles.contactLabel}>联系邮箱</Text><Text style={styles.contactValue}>lanxil96@gmail.com</Text></View>
+            <ExternalLink size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.contactRow} onPress={() => openLink("https://github.com/llx140049/BaGu-App")}>
+            <View style={styles.contactIcon}><GitBranch size={20} color={colors.text} /></View>
+            <View style={styles.contactCopy}><Text style={styles.contactLabel}>项目仓库</Text><Text style={styles.contactValue} numberOfLines={1}>github.com/llx140049/BaGu-App</Text></View>
+            <ExternalLink size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
   </View>;
 }
 
@@ -69,4 +96,14 @@ const styles = StyleSheet.create({
   itemDetail: { color: "#9a9aa3", fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 2 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 60, backgroundColor: "#eeeeF1" },
   majorDivider: { height: StyleSheet.hairlineWidth, backgroundColor: "#dedee4", marginVertical: 18 },
+  sheetOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.24)" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 42 },
+  sheetHandle: { alignSelf: "center", width: 38, height: 4, borderRadius: 2, backgroundColor: "#d5d6db", marginBottom: 24 },
+  sheetTitle: { color: colors.text, fontFamily: "MiSans-Semibold", fontSize: 20 },
+  sheetIntro: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 14, lineHeight: 21, marginTop: 8, marginBottom: 18 },
+  contactRow: { minHeight: 70, flexDirection: "row", alignItems: "center", gap: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#eeeeF1" },
+  contactIcon: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: colors.iconBackground },
+  contactCopy: { flex: 1 },
+  contactLabel: { color: colors.text, fontFamily: "MiSans-Medium", fontSize: 15 },
+  contactValue: { color: colors.textSecondary, fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 3 },
 });

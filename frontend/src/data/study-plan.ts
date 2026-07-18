@@ -11,17 +11,40 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export async function getStudyPlan(): Promise<StudyPlan> {
   const database = await getDb();
-  const row = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", [PLAN_KEY]);
+  const [row, targetRow] = await Promise.all([
+    database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", [PLAN_KEY]),
+    database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["daily_new_target"]),
+  ]);
+  const configuredTarget = Number(targetRow?.value);
   try {
     const parsed = JSON.parse(row?.value ?? "");
-    if (Array.isArray(parsed?.items)) return { dailyTarget: Number(parsed.dailyTarget) || 0, items: parsed.items.filter((item: any) => typeof item?.tag === "string") };
+    if (Array.isArray(parsed?.items)) return { dailyTarget: Number.isFinite(configuredTarget) && configuredTarget > 0 ? configuredTarget : (Number(parsed.dailyTarget) || 0), items: parsed.items.filter((item: any) => typeof item?.tag === "string") };
   } catch {}
-  return { dailyTarget: 0, items: [] };
+  return { dailyTarget: Number.isFinite(configuredTarget) && configuredTarget > 0 ? configuredTarget : 0, items: [] };
 }
 
 export async function saveStudyPlan(plan: StudyPlan) {
   const database = await getDb();
   await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [PLAN_KEY, JSON.stringify(plan)]);
+}
+
+export async function getDailyNewTarget() {
+  const database = await getDb();
+  const row = await database.getFirstAsync("SELECT value FROM app_settings WHERE key = ?", ["daily_new_target"]);
+  const target = Number(row?.value);
+  return Number.isFinite(target) && target > 0 ? target : 10;
+}
+
+export async function resetPlanItemProgress(tag: string) {
+  const database = await getDb();
+  const rows: { id: string; cat: string; tags?: string | null }[] = await database.getAllAsync("SELECT id, cat, tags FROM questions");
+  const questionIds = rows
+    .filter((row) => parseQuestionTags(row.tags, row.cat).some((value) => value === tag || value.startsWith(`${tag}/`)))
+    .map((row) => row.id);
+  if (!questionIds.length) return 0;
+  const placeholders = questionIds.map(() => "?").join(", ");
+  await database.runAsync(`UPDATE card_progress SET level = 0, correct = 0, incorrect = 0, last_review = NULL, next_review = NULL WHERE question_id IN (${placeholders})`, questionIds);
+  return questionIds.length;
 }
 
 export async function getTodayStudySummary(): Promise<TodayStudySummary> {

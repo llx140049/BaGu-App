@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { CheckCircle2, ChevronRight, MoreHorizontal, Play, Plus } from "lucide-react-native";
 import { BackButton } from "../../src/components/PrototypeUI";
 import { colors } from "../../src/tokens/colors";
-import { getPlanReviewCount, getPlanTagOptions, getStudyPlan, getTodayItemProgress, getTodayStudySummary, makePlanItem, saveStudyPlan, StudyPlan, TodayStudySummary } from "../../src/data/study-plan";
+import { getDailyNewTarget, getPlanReviewCount, getPlanTagOptions, getStudyPlan, getTodayItemProgress, getTodayStudySummary, makePlanItem, saveStudyPlan, StudyPlan, TodayStudySummary } from "../../src/data/study-plan";
 import { getDb } from "../../src/data/db";
 
 function StatusRing({ value, type, onPress }: { value: number | string; type: "learning" | "review"; onPress: () => void }) { const isLearning = type === "learning"; const color = isLearning ? colors.primary : "#4F7FBF"; return <View style={styles.ringGroup}><Text style={[styles.ringNumber, isLearning ? styles.progressNumber : styles.reviewNumber]}>{value}</Text><View style={styles.ringLabelRow}><Text style={[styles.ringLabel, isLearning ? styles.progressLabel : styles.reviewLabel]}>{isLearning ? "今日进度" : "待复习"}</Text><TouchableOpacity accessibilityLabel={isLearning ? "开始今日学习" : "开始待复习"} hitSlop={10} onPress={onPress}><Play size={11} color={color} fill={color} /></TouchableOpacity></View></View>; }
@@ -14,7 +14,7 @@ export default function StudyPlanScreen() {
   const load = useCallback(async () => { const next = await getStudyPlan(); const nextSummary = await getTodayStudySummary(); setPlan(next); setSummary(nextSummary); setOptions(await getPlanTagOptions()); setItemProgress(await getTodayItemProgress(next.items)); setReviewCount(await getPlanReviewCount(next.items.filter((item) => item.enabled))); }, []);
   useFocusEffect(useCallback(() => { load().catch(() => {}); }, [load]));
   const updatePlan = async (next: StudyPlan) => { await saveStudyPlan(next); await load(); };
-  const createPlan = async () => { const tags = Array.from(new Set(options.map((tag) => tag.split("/")[0]))); const items = tags.slice(0, 3).map((tag, index) => makePlanItem(tag, index === 0 ? 10 : 5)); await updatePlan({ dailyTarget: items.reduce((sum, item) => sum + item.dailyTarget, 0) || 20, items }); };
+  const createPlan = async () => { const tags = Array.from(new Set(options.map((tag) => tag.split("/")[0]))); const items = tags.slice(0, 3).map((tag, index) => makePlanItem(tag, index === 0 ? 10 : 5)); await updatePlan({ dailyTarget: await getDailyNewTarget(), items }); };
   const addItem = async (tag: string) => { if (plan.items.some((item) => item.tag === tag)) return; await updatePlan({ ...plan, items: [...plan.items, makePlanItem(tag)] }); setPicker(null); };
   const setTarget = async (dailyTarget: number) => { await updatePlan({ ...plan, dailyTarget }); setPicker(null); };
   const openContentPicker = () => { setSelectedPrimary(null); setPicker("content"); };

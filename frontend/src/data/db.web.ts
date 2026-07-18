@@ -269,6 +269,32 @@ function createInMemoryDb() {
     runAsync: async (sql: string, params?: any[]) => {
       const upper = sql.toUpperCase();
 
+      if (upper.trim() === "DELETE FROM CARD_PROGRESS") {
+        tables.card_progress.splice(0);
+        persist();
+        return;
+      }
+      if (upper.trim() === "DELETE FROM STUDY_RECORDS") {
+        tables.study_records.splice(0);
+        persist();
+        return;
+      }
+      if (upper.trim() === "DELETE FROM QUESTIONS") {
+        tables.questions.splice(0);
+        persist();
+        return;
+      }
+      if (upper.trim() === "DELETE FROM DOCUMENTS") {
+        tables.documents.splice(0);
+        persist();
+        return;
+      }
+      if (upper.trim() === "DELETE FROM APP_SETTINGS") {
+        tables.app_settings.splice(0);
+        persist();
+        return;
+      }
+
       if (upper.includes("INTO QUESTIONS") && params) {
         const literalUserId = sql.match(/VALUES\s*\(\?\s*,\s*'([^']+)'\s*,/i)?.[1];
         const usesLiteralUserId = Boolean(literalUserId);
@@ -323,17 +349,20 @@ function createInMemoryDb() {
         const existingIndex = tables.documents.findIndex((row) => row.id === params[0]);
         if (!(upper.includes("OR IGNORE") && existingIndex >= 0)) {
           const hasReadingFields = upper.includes("SCROLL_OFFSET");
+          const hasOriginalFile = upper.includes("HAS_ORIGINAL_FILE");
+          const readingOffset = hasOriginalFile ? 1 : 0;
           const document = {
           id: params[0],
           title: params[1],
           cat: params[2],
           content: params[3],
           source: params[4] ?? "",
-          tags: hasReadingFields ? (params[5] ?? "[]") : "[]",
-          scroll_offset: hasReadingFields ? (params[6] ?? 0) : 0,
-          reading_progress: hasReadingFields ? (params[7] ?? 0) : 0,
-          last_read_at: hasReadingFields ? (params[8] ?? null) : null,
-          created_at: hasReadingFields ? (params[9] ?? new Date().toISOString()) : (params[5] ?? new Date().toISOString()),
+          has_original_file: hasOriginalFile ? (params[5] ?? 0) : 0,
+          tags: hasReadingFields ? (params[5 + readingOffset] ?? "[]") : "[]",
+          scroll_offset: hasReadingFields ? (params[6 + readingOffset] ?? 0) : 0,
+          reading_progress: hasReadingFields ? (params[7 + readingOffset] ?? 0) : 0,
+          last_read_at: hasReadingFields ? (params[8 + readingOffset] ?? null) : null,
+          created_at: hasReadingFields ? (params[9 + readingOffset] ?? new Date().toISOString()) : (params[5 + readingOffset] ?? new Date().toISOString()),
           };
           if (existingIndex >= 0) tables.documents[existingIndex] = document;
           else tables.documents.push(document);
@@ -399,11 +428,13 @@ function createInMemoryDb() {
       }
 
       if (upper.includes("UPDATE DOCUMENTS SET TITLE = ?, CAT = ?, CONTENT = ?") && params) {
-        const document = tables.documents.find((row) => row.id === params[9]);
+        const hasOriginalFile = upper.includes("HAS_ORIGINAL_FILE");
+        const offset = hasOriginalFile ? 1 : 0;
+        const document = tables.documents.find((row) => row.id === params[9 + offset]);
         if (document) {
           Object.assign(document, {
-            title: params[0], cat: params[1], content: params[2], source: params[3], tags: params[4],
-            scroll_offset: params[5], reading_progress: params[6], last_read_at: params[7], created_at: params[8],
+            title: params[0], cat: params[1], content: params[2], source: params[3], has_original_file: hasOriginalFile ? params[4] : (document.has_original_file ?? 0), tags: params[4 + offset],
+            scroll_offset: params[5 + offset], reading_progress: params[6 + offset], last_read_at: params[7 + offset], created_at: params[8 + offset],
           });
         }
       }
@@ -424,19 +455,23 @@ function createInMemoryDb() {
       }
 
       if (upper.includes("UPDATE CARD_PROGRESS SET") && params) {
-        if (upper.includes("IS_STARRED = ? WHERE QUESTION_ID = ?")) {
+        if (upper.includes("LEVEL = 0, CORRECT = 0, INCORRECT = 0, LAST_REVIEW = NULL, NEXT_REVIEW = NULL WHERE QUESTION_ID IN")) {
+          tables.card_progress
+            .filter((row) => params.includes(row.question_id))
+            .forEach((row) => Object.assign(row, { level: 0, correct: 0, incorrect: 0, last_review: null, next_review: null }));
+        } else if (upper.includes("IS_STARRED = ? WHERE QUESTION_ID = ?")) {
           const progress = tables.card_progress.find((row) => row.question_id === params[1]);
           if (progress) progress.is_starred = params[0];
-          return;
-        }
-        const progress = tables.card_progress.find((row) => row.id === params[6]);
-        if (progress) {
-          progress.level = params[0];
-          progress.correct = params[1];
-          progress.incorrect = params[2];
-          progress.last_review = params[3];
-          progress.next_review = params[4];
-          progress.is_starred = params[5];
+        } else {
+          const progress = tables.card_progress.find((row) => row.id === params[6]);
+          if (progress) {
+            progress.level = params[0];
+            progress.correct = params[1];
+            progress.incorrect = params[2];
+            progress.last_review = params[3];
+            progress.next_review = params[4];
+            progress.is_starred = params[5];
+          }
         }
       }
 

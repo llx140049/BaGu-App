@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # Upload
     UPLOAD_DIR: str = "./uploads"
-    MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_UPLOAD_SIZE_MB: int = 100
 
     # DeepSeek
     DEEPSEEK_API_KEY: str = ""

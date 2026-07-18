@@ -24,6 +24,7 @@ export async function getDb(): Promise<any> {
       q TEXT NOT NULL,
       a TEXT NOT NULL,
       source TEXT DEFAULT '',
+      has_original_file INTEGER DEFAULT 0,
       source_document_id TEXT DEFAULT NULL,
       tags TEXT DEFAULT '[]',
       created_at TEXT DEFAULT (datetime('now'))
@@ -91,8 +92,21 @@ export async function getDb(): Promise<any> {
   if (!documentColumns.some((column) => column.name === "last_read_at")) {
     await db.execAsync("ALTER TABLE documents ADD COLUMN last_read_at TEXT");
   }
+  if (!documentColumns.some((column) => column.name === "has_original_file")) {
+    await db.execAsync("ALTER TABLE documents ADD COLUMN has_original_file INTEGER DEFAULT 0");
+  }
 
   return db;
+}
+
+/** Removes data that belongs to the signed-in account before another account uses this device. */
+export async function clearAccountData() {
+  const database = await getDb();
+  await database.runAsync("DELETE FROM card_progress");
+  await database.runAsync("DELETE FROM study_records");
+  await database.runAsync("DELETE FROM questions");
+  await database.runAsync("DELETE FROM documents");
+  await database.runAsync("DELETE FROM app_settings");
 }
 
 export async function insertSampleData() {

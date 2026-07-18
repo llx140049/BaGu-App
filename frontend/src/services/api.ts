@@ -69,6 +69,14 @@ export const questionsApi = {
   get: (id: string) => request<any>(`/api/v1/questions/${id}`),
 };
 
+export const documentsApi = {
+  getOriginalFileRequest: async (documentId: string) => {
+    const token = await getApiAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    return { url: `${API_BASE}/api/v1/documents/${documentId}/original-file`, headers };
+  },
+};
+
 export const uploadApi = {
   uploadPdf: async (
     file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
@@ -94,6 +102,11 @@ export const uploadApi = {
     request("/api/v1/upload/confirm", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+  generateQuestions: (previewToken: string) =>
+    request<any>("/api/v1/upload/generate", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
     }),
 };
 
@@ -133,4 +146,4 @@ export const statsApi = {
   compare: () => request<any>("/api/v1/stats/compare"),
 };
 
-export default { authApi, questionsApi, uploadApi, progressApi, syncApi, statsApi };
+export default { authApi, questionsApi, documentsApi, uploadApi, progressApi, syncApi, statsApi };

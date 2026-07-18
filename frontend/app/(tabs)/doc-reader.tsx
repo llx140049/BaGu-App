@@ -4,9 +4,9 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal, Tex
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { colors } from "../../src/tokens/colors";
 import { getDb } from "../../src/data/db";
-import { syncApi } from "../../src/services/api";
+import { API_BASE, syncApi } from "../../src/services/api";
 import MarkdownDocument from "../../src/components/MarkdownDocument";
-import { Download, ListTree, MoreHorizontal, Play, Search, Settings, Share2 } from "lucide-react-native";
+import { FileText, MoreHorizontal, Pencil, Play } from "lucide-react-native";
 
 interface DocData {
   id: string;
@@ -14,6 +14,7 @@ interface DocData {
   cat: string;
   content: string;
   source: string;
+  has_original_file?: number | boolean;
   scroll_offset?: number;
   reading_progress?: number;
   last_read_at?: string | null;
@@ -50,7 +51,7 @@ function renderContent(text: string, isDark: boolean): React.ReactNode[] {
     if (trimmed === "") { elements.push(<View key={"sp-" + i} style={{ height: 8 }} />); return; }
     if (trimmed.startsWith("# ")) { elements.push(<Text key={"h1-" + i} style={[s.h1, { color: c }]}>{trimmed.slice(2)}</Text>); return; }
     if (trimmed.startsWith("## ")) { elements.push(<Text key={"h2-" + i} style={[s.h2, { color: c }]}>{trimmed.slice(3)}</Text>); return; }
-    if (trimmed.startsWith("### ")) { elements.push(<Text key={"h3-" + i} style={[s.h3, { color: colors.document }]}>{trimmed.slice(4)}</Text>); return; }
+    if (trimmed.startsWith("### ")) { elements.push(<Text key={"h3-" + i} style={[s.h3, { color: c }]}>{trimmed.slice(4)}</Text>); return; }
     if (trimmed.startsWith("> ")) {
       elements.push(
         <View key={"bq-" + i} style={[s.blockquote, { borderLeftColor: colors.document }]}>
@@ -62,7 +63,7 @@ function renderContent(text: string, isDark: boolean): React.ReactNode[] {
     if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
       elements.push(
         <View key={"li-" + i} style={s.listItem}>
-          <Text style={[s.bullet, { color: colors.document }]}>·</Text>
+          <Text style={[s.bullet, { color: c }]}>·</Text>
           <Text style={[s.listText, { color: c }]}>{trimmed.slice(2)}</Text>
         </View>
       );
@@ -116,9 +117,15 @@ export default function DocReaderScreen() {
   const [draftTitle, setDraftTitle] = useState("");
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [draftContent, setDraftContent] = useState("");
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorCategory, setEditorCategory] = useState("");
+  const [editorMode, setEditorMode] = useState<"edit" | "preview">("edit");
   const [draftCategory, setDraftCategory] = useState("");
   const [directoryOptions, setDirectoryOptions] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
+  const editorScrollRef = useRef<ScrollView>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestReading = useRef({ offset: 0, progress: 0 });
   const restored = useRef(false);
@@ -199,6 +206,43 @@ export default function DocReaderScreen() {
     setShowCategoryEditor(true);
   };
 
+  const openEditor = () => {
+    if (!doc) return;
+    setDraftContent(doc.content);
+    setEditorTitle(doc.title);
+    setEditorCategory(doc.cat);
+    setEditorMode("edit");
+    setShowMore(false);
+    setShowEditor(true);
+    setTimeout(() => editorScrollRef.current?.scrollTo({ y: 0, animated: false }), 100);
+  };
+
+  const saveDocumentContent = async () => {
+    const title = editorTitle.trim();
+    const category = editorCategory.split("/").map((part) => part.trim()).filter(Boolean).join("/");
+    if (!doc || !title || !category) return;
+    try {
+      if (category !== doc.cat) await syncApi.updateDocumentCategory(doc.id, category);
+      const database = await getDb();
+      await database.runAsync("UPDATE documents SET title = ?, cat = ?, content = ? WHERE id = ?", [title, category, draftContent, doc.id]);
+      if (category !== doc.cat) await database.runAsync("UPDATE questions SET cat = ? WHERE source_document_id = ?", [category, doc.id]);
+      setDoc({ ...doc, title, cat: category, content: draftContent });
+      setShowEditor(false);
+    } catch (e: any) {
+      Alert.alert("保存失败", e.message || "请检查登录状态和网络");
+    }
+  };
+
+  const openOriginalPdf = () => {
+    if (!doc) return;
+    router.push({ pathname: "/pdf-reader", params: { id: doc.id, title: doc.title } });
+  };
+
+  const switchEditorMode = (mode: "edit" | "preview") => {
+    setEditorMode(mode);
+    setTimeout(() => editorScrollRef.current?.scrollTo({ y: 0, animated: false }), 50);
+  };
+
   const saveCategory = async () => {
     const category = draftCategory.split("/").map((part) => part.trim()).filter(Boolean).join("/");
     if (!doc || !category) return;
@@ -268,17 +312,27 @@ export default function DocReaderScreen() {
           }
         }}
       >
-        <MarkdownDocument markdown={doc.content} />
+        <MarkdownDocument markdown={doc.content} imageBaseUrl={API_BASE} />
       </ScrollView>
       {showMore ? <View style={[s.moreMenu, { backgroundColor: surface }]}>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}><ListTree size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>目录</Text></TouchableOpacity>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("搜索", "文档内搜索将在下一阶段开放。"); }}><Search size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>搜索</Text></TouchableOpacity>
+        {doc.has_original_file ? <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); openOriginalPdf(); }}><FileText size={20} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>阅读原文件</Text></TouchableOpacity> : null}
+        <TouchableOpacity style={s.moreRow} onPress={openEditor}><Pencil size={20} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>编辑</Text></TouchableOpacity>
         <View style={s.moreDivider} />
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("分享", "分享功能将在下一阶段开放。"); }}><Share2 size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>分享</Text></TouchableOpacity>
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("导出", "导出功能将在下一阶段开放。"); }}><Download size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>导出</Text></TouchableOpacity>
-        <View style={s.moreDivider} />
-        <TouchableOpacity style={s.moreRow} onPress={() => { setShowMore(false); Alert.alert("阅读设置", "阅读设置将在下一阶段开放。"); }}><Settings size={21} color={c} style={s.moreRowIcon} /><Text style={[s.moreRowText, { color: c }]}>阅读设置</Text></TouchableOpacity>
       </View> : null}
+      <Modal visible={showEditor} animationType="slide" onRequestClose={() => setShowEditor(false)}>
+        <View style={[s.editorPage, { backgroundColor: bg }]}>
+          <View style={s.editorHeader}><TouchableOpacity style={s.editorHeaderButton} onPress={() => setShowEditor(false)}><Text style={[s.editorCancelText, { color: colors.textSecondary }]}>取消</Text></TouchableOpacity><Text numberOfLines={1} style={[s.editorHeaderTitle, { color: c }]}>编辑文档</Text><TouchableOpacity style={s.editorHeaderButton} onPress={saveDocumentContent}><Text style={s.editorSaveText}>保存</Text></TouchableOpacity></View>
+          <ScrollView ref={editorScrollRef} contentContainerStyle={s.editorContent} keyboardShouldPersistTaps="handled">
+            <Text style={[s.editorLabel, { color: colors.textSecondary }]}>文件名</Text>
+            <TextInput style={[s.editorInput, { color: c, backgroundColor: surface }]} value={editorTitle} onChangeText={setEditorTitle} placeholder="输入文件名" placeholderTextColor={colors.textTertiary} />
+            <Text style={[s.editorLabel, { color: colors.textSecondary }]}>保存路径</Text>
+            <TextInput style={[s.editorInput, { color: c, backgroundColor: surface }]} value={editorCategory} onChangeText={setEditorCategory} placeholder="例如：高等数学/多元函数" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            {directoryOptions.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.editorDirectoryOptions}>{directoryOptions.map((category) => <TouchableOpacity key={category} style={[s.editorDirectoryChip, { backgroundColor: editorCategory === category ? colors.documentLight : surface }]} onPress={() => setEditorCategory(category)}><Text style={[s.editorDirectoryChipText, { color: editorCategory === category ? colors.document : c }]}>{category}</Text></TouchableOpacity>)}</ScrollView> : null}
+            <View style={s.editorModeToggle}><TouchableOpacity style={[s.editorModeOption, editorMode === "edit" && s.editorModeActive]} onPress={() => switchEditorMode("edit")}><Text style={[s.editorModeText, editorMode === "edit" && s.editorModeTextActive]}>编辑</Text></TouchableOpacity><TouchableOpacity style={[s.editorModeOption, editorMode === "preview" && s.editorModeActive]} onPress={() => switchEditorMode("preview")}><Text style={[s.editorModeText, editorMode === "preview" && s.editorModeTextActive]}>预览</Text></TouchableOpacity></View>
+            {editorMode === "edit" ? <TextInput style={[s.contentEditor, { color: c, backgroundColor: surface }]} value={draftContent} onChangeText={setDraftContent} multiline textAlignVertical="top" placeholder="输入文档内容" placeholderTextColor={colors.textTertiary} /> : <View style={[s.contentPreview, { backgroundColor: surface }]}><MarkdownDocument markdown={draftContent || "暂无内容"} imageBaseUrl={API_BASE} /></View>}
+          </ScrollView>
+        </View>
+      </Modal>
       <Modal visible={showCategoryEditor} transparent animationType="fade" onRequestClose={() => setShowCategoryEditor(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.renameModal, { backgroundColor: surface }]}>
@@ -400,4 +454,23 @@ const s = StyleSheet.create({
   listText: { fontSize: 15, lineHeight: 24, flex: 1 },
   tableRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: "#ccc", paddingVertical: 6 },
   tableCell: { flex: 1, fontSize: 13, paddingHorizontal: 4 },
+  editorPage: { flex: 1 },
+  editorHeader: { height: 76, paddingHorizontal: 20, flexDirection: "row", alignItems: "center" },
+  editorHeaderButton: { width: 48, height: 42, justifyContent: "center" },
+  editorHeaderTitle: { flex: 1, textAlign: "center", fontFamily: "MiSans-Semibold", fontSize: 18 },
+  editorCancelText: { fontFamily: "MiSans-Medium", fontSize: 16 },
+  editorSaveText: { color: colors.document, textAlign: "right", fontFamily: "MiSans-Semibold", fontSize: 16 },
+  editorContent: { paddingHorizontal: 20, paddingBottom: 28 },
+  editorLabel: { fontFamily: "MiSans-Regular", fontSize: 13, marginTop: 12, marginBottom: 8 },
+  editorInput: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, fontFamily: "MiSans-Regular", fontSize: 16 },
+  editorDirectoryOptions: { gap: 8, paddingTop: 10, paddingRight: 12 },
+  editorDirectoryChip: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
+  editorDirectoryChipText: { fontFamily: "MiSans-Medium", fontSize: 12 },
+  editorModeToggle: { alignSelf: "flex-start", flexDirection: "row", backgroundColor: "#f1f1f3", borderRadius: 10, padding: 3, marginTop: 22, marginBottom: 12 },
+  editorModeOption: { borderRadius: 8, paddingHorizontal: 15, paddingVertical: 7 },
+  editorModeActive: { backgroundColor: "#fff" },
+  editorModeText: { color: colors.textSecondary, fontFamily: "MiSans-Medium", fontSize: 13 },
+  editorModeTextActive: { color: colors.text },
+  contentEditor: { minHeight: 360, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 16, fontFamily: "MiSans-Regular", fontSize: 16, lineHeight: 26 },
+  contentPreview: { minHeight: 360, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 16 },
 });

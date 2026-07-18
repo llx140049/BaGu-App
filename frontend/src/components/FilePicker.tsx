@@ -3,7 +3,9 @@ import { useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import { colors } from "../tokens/colors";
 
-export interface SelectedFile { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string; }
+export interface SelectedFile { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string; size?: number; }
+
+const MAX_UPLOAD_SIZE_BYTES = 100 * 1024 * 1024;
 
 interface FilePickerProps {
   onFileSelected: (file: SelectedFile) => void;
@@ -33,8 +35,9 @@ export default function FilePicker({ onFileSelected, label = "选择文件", flo
       <input ref={inputRef} type="file" accept=".pdf,.md,.markdown,.txt" style={{ display: "none" }} onChange={async (event) => {
         const file = event.target.files?.[0];
         if (!file) return;
+        if (file.size > MAX_UPLOAD_SIZE_BYTES) { Alert.alert("文件过大", "单个文件最大支持 100MB。"); event.target.value = ""; return; }
         setFileName(file.name);
-        onFileSelected({ uri: URL.createObjectURL(file), name: file.name, bytes: await file.arrayBuffer(), mimeType: file.type });
+        onFileSelected({ uri: URL.createObjectURL(file), name: file.name, bytes: await file.arrayBuffer(), mimeType: file.type, size: file.size });
         event.target.value = "";
       }} />
     </View>;
@@ -45,9 +48,10 @@ export default function FilePicker({ onFileSelected, label = "选择文件", flo
       const result = await DocumentPicker.getDocumentAsync({ type: ["application/pdf", "text/markdown", "text/plain"], copyToCacheDirectory: true });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
+      if (file.size && file.size > MAX_UPLOAD_SIZE_BYTES) { Alert.alert("文件过大", "单个文件最大支持 100MB。"); return; }
       const name = readableFileName(file.name, file.uri);
       setFileName(name);
-      onFileSelected({ uri: file.uri, name, mimeType: file.mimeType });
+      onFileSelected({ uri: file.uri, name, mimeType: file.mimeType, size: file.size });
     } catch {
       Alert.alert("选择文件失败", "请重试，或检查应用的文件访问权限。");
     }
@@ -55,7 +59,7 @@ export default function FilePicker({ onFileSelected, label = "选择文件", flo
 
   return <View>
     <TouchableOpacity style={buttonStyle} onPress={pickNativeFile}><Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text></TouchableOpacity>
-    {!floating && !iconOnly ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文档</Text> : null}
+    {!floating && !iconOnly ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文档，最大 100MB</Text> : null}
   </View>;
 }
 
@@ -63,7 +67,7 @@ const styles = StyleSheet.create({
   button: { padding: 14, borderRadius: 10, alignItems: "center" },
   floatingButton: { width: 56, height: 56, borderRadius: 28, padding: 0, justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   iconOnlyButton: { width: 38, height: 38, padding: 0, justifyContent: "center" },
-  buttonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  iconOnlyText: { color: colors.text, fontSize: 32, fontWeight: "300", lineHeight: 36 },
-  hint: { fontSize: 12, textAlign: "center", marginTop: 8, lineHeight: 18 },
+  buttonText: { color: "#fff", fontFamily: "MiSans-Medium", fontSize: 15 },
+  iconOnlyText: { color: colors.text, fontFamily: "MiSans-Regular", fontSize: 32, lineHeight: 36 },
+  hint: { fontFamily: "MiSans-Regular", fontSize: 12, textAlign: "center", marginTop: 8, lineHeight: 18 },
 });

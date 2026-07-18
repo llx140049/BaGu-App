@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Document, Question
-from app.services.pdf_service import extract_text_from_pdf, extract_text_from_markdown
+from app.services.pdf_service import extract_markdown_from_pdf, extract_text_from_markdown, extract_text_from_pdf
 from app.services.deepseek import generate_questions_from_text
 
 router = APIRouter(prefix="/api/v1/upload", tags=["upload"])
@@ -20,6 +20,25 @@ UPLOAD_DIR = Path(settings.UPLOAD_DIR)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
+
+
+def _preview_response(preview_token: str, preview: dict) -> dict:
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for question in preview["questions"]:
+        grouped[question["cat"]].append(question)
+    return {
+        "preview_token": preview_token,
+        "document_id": preview["document_id"],
+        "file_name": preview["file_name"],
+        "file_type": preview["file_type"],
+        "total": len(preview["questions"]),
+        "generate_questions": preview["generate_questions"],
+        "content": preview["content"],
+        "categories": [
+            {"cat": cat, "count": len(items), "questions": items}
+            for cat, items in grouped.items()
+        ],
+    }
 
 
 def _fix_qa_swap(q_item: dict) -> dict:
@@ -87,7 +106,14 @@ async def upload_pdf(
             f.write(file_bytes)
 
         try:
-            text = await extract_text_from_pdf(file_bytes, filename) if file_type == "pdf" else await extract_text_from_markdown(file_bytes, filename)
+            if file_type == "pdf":
+                image_dir = UPLOAD_DIR / f"{file_id}-assets"
+                image_dir.mkdir(parents=True, exist_ok=True)
+                text = await extract_markdown_from_pdf(file_bytes, filename, image_dir, f"/api/v1/document-assets/{image_dir.name}/")
+                question_text = await extract_text_from_pdf(file_bytes, filename)
+            else:
+                text = await extract_text_from_markdown(file_bytes, filename)
+                question_text = text
             if not text.strip():
                 raise HTTPException(400, detail="无法从文件中提取到任何文本内容")
 
@@ -95,7 +121,7 @@ async def upload_pdf(
 
             validated = []
             if generate_questions:
-                questions = await generate_questions_from_text(text)
+                questions = await generate_questions_from_text(question_text)
                 for q in questions:
                     if not isinstance(q, dict) or "cat" not in q or "q" not in q or "a" not in q:
                         continue
@@ -119,26 +145,12 @@ async def upload_pdf(
                 "file_type": file_type,
                 "file_path": str(save_path),
                 "content": text,
+                "question_content": question_text,
                 "questions": validated,
                 "generate_questions": generate_questions,
             }
 
-            grouped: dict[str, list[dict]] = defaultdict(list)
-            for q in validated:
-                grouped[q["cat"]].append(q)
-
-            return {
-                "preview_token": preview_token,
-                "document_id": document_id,
-                "file_name": filename,
-                "total": len(validated),
-                "generate_questions": generate_questions,
-                "content": text,
-                "categories": [
-                    {"cat": cat, "count": len(items), "questions": items}
-                    for cat, items in grouped.items()
-                ],
-            }
+            return _preview_response(preview_token, _preview_store[preview_token])
         except HTTPException:
             raise
         except Exception as e:
@@ -151,6 +163,39 @@ async def upload_pdf(
         raise
     except Exception as e:
         raise HTTPException(500, detail=f"上传失败: {str(e)}")
+
+
+@router.post("/generate")
+async def generate_preview_questions(body: dict):
+    """Generate questions only after the document has been parsed successfully."""
+    token = body.get("preview_token", "")
+    preview = _preview_store.get(token)
+    if preview is None:
+        raise HTTPException(404, detail="导入数据已过期，请重新选择文件")
+
+    try:
+        generated = await generate_questions_from_text(preview["question_content"])
+        validated = []
+        for question in generated:
+            if not isinstance(question, dict) or not {"cat", "q", "a"}.issubset(question):
+                continue
+            item = _fix_qa_swap({
+                "cat": str(question["cat"]),
+                "q": str(question["q"]),
+                "a": str(question["a"]),
+                "source_document_id": preview["document_id"],
+                "source_document_ids": [preview["document_id"]],
+            })
+            validated.append(item)
+        if not validated:
+            raise HTTPException(500, detail="AI 未能生成有效题目，请检查 DeepSeek API Key 或重试")
+        preview["questions"] = validated
+        preview["generate_questions"] = True
+        return _preview_response(token, preview)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, detail=f"生成题目失败: {str(exc)}") from exc
 
 
 @router.post("/confirm")
@@ -194,11 +239,14 @@ async def confirm_upload(
             content=content,
             source="AI 导入",
             source_file_name=preview["file_name"],
+            original_file_key=Path(preview["file_path"]).name if preview["file_type"] == "pdf" else "",
         )
         db.add(document)
     else:
         document.content = content
         document.cat = category
+        document.source_file_name = preview["file_name"]
+        document.original_file_key = Path(preview["file_path"]).name if preview["file_type"] == "pdf" else ""
     for item in questions:
         # Keep generated questions in the same directory as their source document.
         item["cat"] = document.cat
@@ -224,4 +272,5 @@ async def confirm_upload(
         "content": content,
         "questions": questions,
         "generate_questions": preview["generate_questions"],
+        "has_original_file": bool(document.original_file_key),
     }

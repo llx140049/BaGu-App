@@ -6,12 +6,17 @@ import { getDb } from "../../src/data/db";
 import { colors } from "../../src/tokens/colors";
 import { BackButton } from "../../src/components/PrototypeUI";
 import { parseQuestionTags, topLevelTag } from "../../src/data/tagging";
+import { useThemeStore } from "../../src/store/useThemeStore";
 
 interface QuestionRow { id: string; cat: string; tags?: string | null; }
 interface Topic { name: string; count: number; }
 
 export default function QuestionBankScreen() {
   const router = useRouter();
+  const isDark = useThemeStore((state) => state.theme === "dark");
+  const bg = isDark ? colors.bgDark : colors.bg;
+  const surface = isDark ? colors.surfaceDark : colors.surface;
+  const text = isDark ? colors.textDark : colors.text;
   const [topics, setTopics] = useState<Topic[]>([]);
   const loadTopics = useCallback(async () => {
     const database = await getDb();
@@ -27,11 +32,11 @@ export default function QuestionBankScreen() {
   }, []);
   useFocusEffect(useCallback(() => { loadTopics().catch(() => setTopics([])); }, [loadTopics]));
 
-  return <View style={styles.page}>
-    <View style={styles.titleRow}><BackButton onPress={() => router.back()} /><Text style={styles.title}>题库</Text></View>
+  return <View style={[styles.page, { backgroundColor: bg }]}>
+    <View style={styles.titleRow}><BackButton onPress={() => router.back()} /><Text style={[styles.title, { color: text }]}>题库</Text></View>
     <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-      {topics.map((topic) => <TouchableOpacity key={topic.name} style={styles.row} onPress={() => router.push({ pathname: "/(tabs)/topic", params: { topic: topic.name } })}>
-        <View style={styles.folderIcon}><BookOpen size={21} color={colors.primary} /></View><View style={styles.rowText}><Text numberOfLines={1} style={styles.name}>{topic.name}</Text><Text style={styles.count}>{topic.count} 张卡片</Text></View><ChevronRight size={21} color={colors.textSecondary} />
+      {topics.map((topic) => <TouchableOpacity key={topic.name} style={[styles.row, { backgroundColor: surface }]} onPress={() => router.push({ pathname: "/(tabs)/topic", params: { topic: topic.name } })}>
+        <View style={[styles.folderIcon, { backgroundColor: isDark ? "#2E3038" : colors.iconBackground }]}><BookOpen size={21} color={colors.primary} /></View><View style={styles.rowText}><Text numberOfLines={1} style={[styles.name, { color: text }]}>{topic.name}</Text><Text style={styles.count}>{topic.count} 张卡片</Text></View><ChevronRight size={21} color={colors.textSecondary} />
       </TouchableOpacity>)}
       {topics.length === 0 ? <Text style={styles.empty}>还没有可学习的卡片</Text> : null}
     </ScrollView>

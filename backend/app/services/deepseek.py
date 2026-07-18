@@ -27,6 +27,9 @@ SYSTEM_PROMPT = """你是一个严谨的技术面试题与答案生成助手。�
 ]"""
 
 
+SYSTEM_PROMPT += "\nFor every question object, also include tags: an array of 1 or 2 broad, reusable Chinese knowledge tags. First generalize detailed concepts to their shared parent topic: for example, 波的干涉、波动、机械波 all use 波; React useEffect、组件渲染 all use React. Do not use a phenomenon, method, chapter title, document/file title, duplicate concept, or deep hierarchy path as a tag."
+
+
 async def _call_deepseek(prompt: str, max_tokens: int = 4096, system: str = "") -> str:
     """Low-level DeepSeek API call. Returns the content string."""
     api_key = settings.DEEPSEEK_API_KEY
@@ -39,7 +42,7 @@ async def _call_deepseek(prompt: str, max_tokens: int = 4096, system: str = "") 
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": max_tokens,
@@ -61,10 +64,78 @@ async def _call_deepseek(prompt: str, max_tokens: int = 4096, system: str = "") 
     return resp.json()["choices"][0]["message"]["content"]
 
 
-async def generate_questions_from_text(text: str) -> list[dict[str, str]]:
+async def generate_tags_from_text(text: str) -> list[str]:
+    """Generate a small set of reusable tags from imported document content."""
+    truncated = text[:120000]
+    result = await _call_deepseek(
+        prompt=(
+            "Read the following study material and return 1 to 3 broad, reusable Chinese knowledge tags. "
+            "First generalize detailed concepts to their shared parent topic: 波的干涉、波动、机械波 should all use 波; "
+            "React useEffect、组件渲染 should use React. "
+            "Avoid phenomena, methods, chapter titles, overly specific details, duplicate concepts, deep hierarchy paths, and document/file titles. "
+            "Use stable topic names (for example: JavaScript, React, 网络). "
+            "Return only a JSON array of strings, with no markdown or explanation.\n\n"
+            f"Material:\n{truncated}"
+        ),
+        max_tokens=256,
+        system="Choose the highest-level shared topic for study material tags, not detailed subtopics. Output valid JSON only.",
+    )
+    text_clean = result.strip()
+    if text_clean.startswith("```"):
+        text_clean = text_clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    parsed = json.loads(text_clean)
+    if isinstance(parsed, dict):
+        parsed = parsed.get("tags", parsed.get("data", []))
+    if not isinstance(parsed, list):
+        raise ValueError("Unexpected tag response format")
+    return [str(tag).strip() for tag in parsed if isinstance(tag, (str, int, float)) and str(tag).strip()]
+
+
+async def align_question_tags_with_existing(
+    questions: list[dict[str, Any]], existing_tags: list[str],
+) -> list[list[str]]:
+    """Consolidate a batch of question tags against a user's existing tag set."""
+    compact_questions = [
+        {"index": index, "question": str(question.get("q", ""))[:180], "tags": question.get("tags", [])}
+        for index, question in enumerate(questions[:80])
+    ]
+    prompt = (
+        "Assign 1 or 2 Chinese knowledge tags to every question below. Prefer a relevant existing tag, "
+        "or create one concise parent tag only when no existing tag fits. Group related subtopics under their "
+        "shared feature: 曲线运动 and 相对运动 should both use 质点运动学 when that tag exists. "
+        "Do not use document titles, detailed phenomena, duplicate concepts, or deep paths. "
+        "Return only JSON array objects: [{\"index\": 0, \"tags\": [\"标签\"]}].\n\n"
+        f"Existing tags: {json.dumps(existing_tags[:120], ensure_ascii=False)}\n"
+        f"Questions: {json.dumps(compact_questions, ensure_ascii=False)}"
+    )
+    result = await _call_deepseek(
+        prompt=prompt,
+        max_tokens=2048,
+        system="Consolidate study question tags into stable, shared parent concepts. Output valid JSON only.",
+    )
+    text_clean = result.strip()
+    if text_clean.startswith("```"):
+        text_clean = text_clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    parsed = json.loads(text_clean)
+    if isinstance(parsed, dict):
+        parsed = parsed.get("items", parsed.get("questions", parsed.get("data", [])))
+    if not isinstance(parsed, list):
+        raise ValueError("Unexpected consolidated tag response format")
+
+    aligned = [[] for _ in questions]
+    for item in parsed:
+        if not isinstance(item, dict) or not isinstance(item.get("index"), int):
+            continue
+        index = item["index"]
+        if 0 <= index < len(aligned) and isinstance(item.get("tags"), list):
+            aligned[index] = [str(tag).strip() for tag in item["tags"] if str(tag).strip()][:2]
+    return aligned
+
+
+async def generate_questions_from_text(text: str) -> list[dict[str, Any]]:
     """
     Send text to DeepSeek API and get structured Q&A array.
-    Returns list of {cat, q, a} dicts.
+    Returns list of {cat, q, a, tags?} dicts.
     """
     max_chars = 400000
     truncated = text[:max_chars]

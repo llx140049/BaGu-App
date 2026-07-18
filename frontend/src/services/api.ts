@@ -1,7 +1,8 @@
 import { Platform } from "react-native";
 
 // On phone (Expo Go), use the computer's LAN IP; on web (browser), use localhost.
-const HOST = Platform.OS === "web" ? "localhost" : "192.168.2.11";
+// Keep this in sync with the current LAN address when testing on a physical phone.
+const HOST = Platform.OS === "web" ? "localhost" : "192.168.2.21";
 export const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? `http://${HOST}:8001`;
 let activeAuthToken = "";
 

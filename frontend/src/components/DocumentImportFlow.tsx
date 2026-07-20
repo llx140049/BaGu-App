@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Circle, FileCode2, FileText, LoaderCircle } from 
 import { BlurView } from "expo-blur";
 import { colors } from "../tokens/colors";
 import type { SelectedFile } from "./FilePicker";
+import { useThemeStore } from "../store/useThemeStore";
 
 export type ImportMode = "original" | "generate";
 export type ImportStage = "reading" | "generating" | "saving";
@@ -14,17 +15,20 @@ export type ImportState =
   | { status: "failed"; mode: ImportMode; message: string };
 
 export function ImportMethodSheet({ file, visible, onSelect, onClose }: { file: SelectedFile | null; visible: boolean; onSelect: (mode: ImportMode) => void; onClose: () => void }) {
+  const isDark = useThemeStore((state) => state.theme === "dark");
+  const surface = isDark ? colors.surfaceDark : colors.surface;
+  const text = isDark ? colors.textDark : colors.text;
   const markdown = /\.(md|markdown|txt|text)$/i.test(file?.name ?? "");
   const FileIcon = markdown ? FileCode2 : FileText;
   const [selectedMode, setSelectedMode] = useState<ImportMode | null>(null);
   useEffect(() => { if (visible) setSelectedMode(null); }, [file?.uri, visible]);
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <Pressable style={styles.choiceOverlay} onPress={onClose}>
-      <Pressable style={styles.methodDialog} onPress={() => undefined}>
-        <Text style={styles.methodTitle}>选择导入方式</Text>
-        <View style={styles.fileInfo}><View style={styles.fileIcon}><FileIcon size={21} color={colors.document} /></View><View style={styles.fileCopy}><Text style={styles.fileName} numberOfLines={2}>{file?.name}</Text><Text style={styles.fileType}>{markdown ? "Markdown 文件" : "PDF 文件"}</Text></View></View>
-        <TouchableOpacity style={[styles.importChoice, selectedMode === "original" && styles.importChoiceSelected]} onPress={() => setSelectedMode("original")}><Text style={[styles.importChoiceText, selectedMode === "original" && styles.importChoiceTextSelected]}>仅导入原文</Text></TouchableOpacity>
-        <TouchableOpacity style={[styles.importChoice, selectedMode === "generate" && styles.importChoiceSelected]} onPress={() => setSelectedMode("generate")}><Text style={[styles.importChoiceText, selectedMode === "generate" && styles.importChoiceTextSelected]}>导入并生成题目</Text></TouchableOpacity>
+      <Pressable style={[styles.methodDialog, { backgroundColor: surface }]} onPress={() => undefined}>
+        <Text style={[styles.methodTitle, { color: text }]}>选择导入方式</Text>
+        <View style={styles.fileInfo}><View style={[styles.fileIcon, { backgroundColor: isDark ? "#2E3038" : colors.iconBackground }]}><FileIcon size={21} color={colors.document} /></View><View style={styles.fileCopy}><Text style={[styles.fileName, { color: text }]} numberOfLines={2}>{file?.name}</Text><Text style={styles.fileType}>{markdown ? "Markdown 文件" : "PDF 文件"}</Text></View></View>
+        <TouchableOpacity style={[styles.importChoice, { backgroundColor: selectedMode === "original" ? (isDark ? "#3A3023" : "#fff1e5") : (isDark ? "#2E3038" : "#f1f1f3") }]} onPress={() => setSelectedMode("original")}><Text style={[styles.importChoiceText, selectedMode === "original" && styles.importChoiceTextSelected]}>仅导入原文</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.importChoice, { backgroundColor: selectedMode === "generate" ? (isDark ? "#3A3023" : "#fff1e5") : (isDark ? "#2E3038" : "#f1f1f3") }]} onPress={() => setSelectedMode("generate")}><Text style={[styles.importChoiceText, selectedMode === "generate" && styles.importChoiceTextSelected]}>导入并生成题目</Text></TouchableOpacity>
         <View style={styles.dialogActions}><TouchableOpacity style={styles.dialogAction} onPress={onClose}><Text style={styles.cancelText}>取消</Text></TouchableOpacity><TouchableOpacity style={styles.dialogAction} onPress={() => selectedMode && onSelect(selectedMode)} disabled={!selectedMode}><Text style={[styles.confirmText, !selectedMode && styles.confirmTextDisabled]}>确认</Text></TouchableOpacity></View>
       </Pressable>
     </Pressable>
@@ -45,6 +49,9 @@ function stageIndex(stage: ImportStage, mode: ImportMode) {
 }
 
 export function ImportProgressModal({ state, onRetry, onClose, onViewQuestions, onViewDocument, longWait }: { state: ImportState; onRetry: () => void; onClose: () => void; onViewQuestions: () => void; onViewDocument: () => void; longWait: 0 | 5 | 15 }) {
+  const isDark = useThemeStore((themeState) => themeState.theme === "dark");
+  const surface = isDark ? colors.surfaceDark : colors.surface;
+  const text = isDark ? colors.textDark : colors.text;
   const visible = state.status !== "idle";
   const working = state.status === "working";
   const success = state.status === "success";
@@ -60,16 +67,16 @@ export function ImportProgressModal({ state, onRetry, onClose, onViewQuestions, 
   }, [spin, state]);
   const rotation = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={working ? () => undefined : onClose}>
-    <View style={styles.progressRoot}><BlurView intensity={16} tint="light" style={StyleSheet.absoluteFill} /><View style={styles.progressOverlay}>
-      <View style={styles.progressCard}>
-        {working ? <><Text style={styles.progressTitle}>{state.mode === "generate" ? "正在生成题目..." : "正在导入文档..."}</Text><View style={styles.statusList}>{visibleStages.map((item) => {
+    <View style={styles.progressRoot}><BlurView intensity={16} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} /><View style={styles.progressOverlay}>
+      <View style={[styles.progressCard, { backgroundColor: surface }]}>
+        {working ? <><Text style={[styles.progressTitle, { color: text }]}>{state.mode === "generate" ? "正在生成题目..." : "正在导入文档..."}</Text><View style={styles.statusList}>{visibleStages.map((item) => {
           const originalIndex = stageItems.findIndex((stage) => stage.id === item.id);
           const done = originalIndex < current;
           const active = originalIndex === current;
-          return <View style={styles.statusRow} key={item.id}>{done ? <View style={styles.doneIcon}><Check size={14} color="#fff" strokeWidth={3} /></View> : active && item.id === "generating" ? <Animated.View style={{ transform: [{ rotate: rotation }] }}><LoaderCircle size={18} color={colors.primary} /></Animated.View> : active ? <Circle size={18} color={colors.primary} /> : <Circle size={18} color="#b5b6bc" />}<Text style={[styles.statusText, active && styles.statusActive, done && styles.statusDone]}>{done ? item.done : active ? item.working : item.working.replace("正在", "")}</Text></View>;
+          return <View style={styles.statusRow} key={item.id}>{done ? <View style={styles.doneIcon}><Check size={14} color="#fff" strokeWidth={3} /></View> : active && item.id === "generating" ? <Animated.View style={{ transform: [{ rotate: rotation }] }}><LoaderCircle size={18} color={colors.primary} /></Animated.View> : active ? <Circle size={18} color={colors.primary} /> : <Circle size={18} color={isDark ? "#565963" : "#b5b6bc"} />}<Text style={[styles.statusText, { color: isDark ? "#A9ABB5" : "#9a9aa3" }, active && styles.statusActive, done && { color: text }]}>{done ? item.done : active ? item.working : item.working.replace("正在", "")}</Text></View>;
         })}</View></> : null}
-        {success ? <><View style={styles.resultIcon}><Check size={28} color="#fff" strokeWidth={3} /></View><Text style={styles.resultTitle}>导入完成</Text><View style={styles.resultActions}>{state.mode === "generate" ? <TouchableOpacity style={[styles.resultAction, styles.resultActionSecondary]} onPress={onViewQuestions}><Text style={[styles.resultPrimaryText, styles.resultSecondaryText]}>查看题目</Text></TouchableOpacity> : null}<TouchableOpacity style={[styles.resultAction, styles.resultActionDocument]} onPress={onViewDocument}><Text style={[styles.resultPrimaryText, styles.resultDocumentText]}>查看文档</Text></TouchableOpacity></View><TouchableOpacity style={styles.resultClose} onPress={onClose}><Text style={styles.resultCloseText}>关闭</Text></TouchableOpacity></> : null}
-        {failed ? <><View style={styles.errorIcon}><AlertTriangle size={28} color={colors.danger} /></View><Text style={styles.resultTitle}>导入失败</Text><Text style={styles.errorLabel}>原因</Text><Text style={styles.errorMessage}>{state.message}</Text><TouchableOpacity style={styles.resultPrimary} onPress={onRetry}><Text style={styles.resultPrimaryText}>重试</Text></TouchableOpacity><TouchableOpacity style={styles.resultClose} onPress={onClose}><Text style={styles.resultCloseText}>关闭</Text></TouchableOpacity></> : null}
+        {success ? <><View style={styles.resultIcon}><Check size={28} color="#fff" strokeWidth={3} /></View><Text style={[styles.resultTitle, { color: text }]}>导入完成</Text><View style={styles.resultActions}>{state.mode === "generate" ? <TouchableOpacity style={[styles.resultAction, styles.resultActionSecondary, { backgroundColor: isDark ? "#3A3023" : "#fff1e5" }]} onPress={onViewQuestions}><Text style={[styles.resultPrimaryText, styles.resultSecondaryText]}>查看题目</Text></TouchableOpacity> : null}<TouchableOpacity style={[styles.resultAction, styles.resultActionDocument, { backgroundColor: isDark ? "#2A342A" : "#e8f5e9" }]} onPress={onViewDocument}><Text style={[styles.resultPrimaryText, styles.resultDocumentText]}>查看文档</Text></TouchableOpacity></View><TouchableOpacity style={styles.resultClose} onPress={onClose}><Text style={styles.resultCloseText}>关闭</Text></TouchableOpacity></> : null}
+        {failed ? <><View style={[styles.errorIcon, { backgroundColor: isDark ? "#3A292C" : "#fff1e9" }]}><AlertTriangle size={28} color={colors.danger} /></View><Text style={[styles.resultTitle, { color: text }]}>导入失败</Text><Text style={styles.errorLabel}>原因</Text><Text style={[styles.errorMessage, { color: text }]}>{state.message}</Text><TouchableOpacity style={styles.resultPrimary} onPress={onRetry}><Text style={styles.resultPrimaryText}>重试</Text></TouchableOpacity><TouchableOpacity style={styles.resultClose} onPress={onClose}><Text style={styles.resultCloseText}>关闭</Text></TouchableOpacity></> : null}
       </View>
     </View></View>
   </Modal>;

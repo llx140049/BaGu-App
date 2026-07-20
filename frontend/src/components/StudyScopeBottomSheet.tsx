@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Animated, Modal, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../tokens/colors";
+import { useThemeStore } from "../store/useThemeStore";
 
 export type StudyScope = "all" | "review" | "wrong" | "favorite" | "unlearned";
 
@@ -19,6 +20,10 @@ interface StudyScopeBottomSheetProps {
 }
 
 export default function StudyScopeBottomSheet({ visible, rangeLabel, options, onClose, onSelect }: StudyScopeBottomSheetProps) {
+  const isDark = useThemeStore((state) => state.theme === "dark");
+  const surface = isDark ? colors.surfaceDark : colors.surface;
+  const text = isDark ? colors.textDark : colors.text;
+  const border = isDark ? colors.borderDark : colors.border;
   const translateY = useRef(new Animated.Value(0)).current;
   useEffect(() => { if (visible) translateY.setValue(0); }, [translateY, visible]);
 
@@ -42,11 +47,11 @@ export default function StudyScopeBottomSheet({ visible, rangeLabel, options, on
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <View style={styles.overlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
-      <Animated.View {...panResponder.panHandlers} style={[styles.sheet, { transform: [{ translateY }] }]}>
-        <View style={styles.handle} />
-        <Text numberOfLines={1} style={styles.title}>开始学习 · {rangeLabel}</Text>
-        <View style={styles.list}>
-          {options.map((option) => <Pressable key={option.type} disabled={option.count === 0} style={({ pressed }) => [styles.row, option.count === 0 && styles.rowDisabled, pressed && option.count > 0 && styles.rowPressed]} onPress={() => onSelect(option.type)}><Text style={[styles.rowLabel, option.count === 0 && styles.optionDisabled]}>{option.label}</Text><Text style={[styles.count, option.count === 0 && styles.textDisabled]}>{option.count}</Text></Pressable>)}
+      <Animated.View {...panResponder.panHandlers} style={[styles.sheet, { backgroundColor: surface, transform: [{ translateY }] }]}>
+        <View style={[styles.handle, { backgroundColor: isDark ? "#565963" : "#d5d6db" }]} />
+        <Text numberOfLines={1} style={[styles.title, { color: text }]}>开始学习 · {rangeLabel}</Text>
+        <View style={[styles.list, { borderTopColor: border }]}>
+          {options.map((option) => <Pressable key={option.type} disabled={option.count === 0} style={({ pressed }) => [styles.row, { borderBottomColor: border }, option.count === 0 && styles.rowDisabled, pressed && option.count > 0 && { backgroundColor: isDark ? "#3A3023" : colors.primaryLight }]} onPress={() => onSelect(option.type)}><Text style={[styles.rowLabel, option.count === 0 && { backgroundColor: isDark ? "#3B3B45" : colors.border, color: colors.textTertiary }]}>{option.label}</Text><Text style={[styles.count, option.count === 0 && styles.textDisabled]}>{option.count}</Text></Pressable>)}
         </View>
       </Animated.View>
     </View>

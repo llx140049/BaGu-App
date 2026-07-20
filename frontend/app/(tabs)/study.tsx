@@ -28,9 +28,28 @@ function scopeCards(cards: Card[], scope: StudyScope, limit?: string) {
 
 function renderAnswerMarkdown(markdown: string, color: string) {
   const inline = (value: string) => value.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <Text key={index} style={{ fontWeight: "700" }}>{part.slice(2, -2)}</Text> : part);
-  return markdown.split("\n").map((line, index) => {
+  const lines = markdown.split("\n");
+  const section = (value: string) => {
+    const plain = value.replace(/^#{1,3}\s*/, "").replaceAll("**", "").trim();
+    const match = plain.match(/^(结论|关键要点|易错点与实例)\s*(?:[：:]\s*(.*))?$/);
+    return match ? { label: match[1], detail: match[2]?.trim() ?? "" } : null;
+  };
+  const hasSectionContent = (index: number) => {
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const value = lines[next].trim();
+      if (section(value)) return false;
+      if (value) return true;
+    }
+    return false;
+  };
+  return lines.map((line, index) => {
     const value = line.trim();
     if (!value) return <View key={`space-${index}`} style={{ height: 9 }} />;
+    const answerSection = section(value);
+    if (answerSection) {
+      if (!answerSection.detail && !hasSectionContent(index)) return null;
+      return <Text key={`section-${index}`} style={[styles.answer, { color }]}><Text style={{ color: colors.info, fontWeight: "700" }}>{answerSection.label}{answerSection.detail ? "：" : ""}</Text>{answerSection.detail ? inline(answerSection.detail) : null}</Text>;
+    }
     if (value.startsWith("# ")) return <Text key={`heading-${index}`} style={{ color, fontSize: 22, lineHeight: 32, fontWeight: "700", marginBottom: 8 }}>{inline(value.slice(2))}</Text>;
     if (value.startsWith("## ")) return <Text key={`heading-${index}`} style={{ color, fontSize: 19, lineHeight: 30, fontWeight: "700", marginBottom: 6 }}>{inline(value.slice(3))}</Text>;
     if (value.startsWith("- ") || value.startsWith("* ")) return <View key={`bullet-${index}`} style={{ flexDirection: "row", gap: 8, marginBottom: 3 }}><Text style={{ color, fontSize: 18, lineHeight: 29 }}>•</Text><Text style={[styles.answer, { color, flex: 1 }]}>{inline(value.slice(2))}</Text></View>;

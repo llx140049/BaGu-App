@@ -23,11 +23,11 @@ function readableFileName(name?: string, uri?: string) {
   return parts[parts.length - 1] || "untitled";
 }
 
-export default function FilePicker({ onFileSelected, label = "选择文件", floating = false, iconOnly = false }: FilePickerProps) {
+export default function FilePicker({ onFileSelected, label = "选择文件", isDark = false, floating = false, iconOnly = false }: FilePickerProps) {
   const [fileName, setFileName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const buttonStyle = [styles.button, floating && styles.floatingButton, iconOnly && styles.iconOnlyButton, { backgroundColor: iconOnly ? "transparent" : colors.primary }];
-  const labelStyle = [styles.buttonText, iconOnly && styles.iconOnlyText];
+  const labelStyle = [styles.buttonText, iconOnly && styles.iconOnlyText, iconOnly && { color: isDark ? colors.textDark : colors.text }];
 
   if (Platform.OS === "web") {
     return <View>
@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
   floatingButton: { width: 56, height: 56, borderRadius: 28, padding: 0, justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   iconOnlyButton: { width: 38, height: 38, padding: 0, justifyContent: "center" },
   buttonText: { color: "#fff", fontFamily: "MiSans-Medium", fontSize: 15 },
-  iconOnlyText: { color: colors.text, fontFamily: "MiSans-Regular", fontSize: 32, lineHeight: 36 },
+  iconOnlyText: { color: colors.text, fontFamily: "MiSans-Regular", fontSize: 36, lineHeight: 40 },
   hint: { fontFamily: "MiSans-Regular", fontSize: 12, textAlign: "center", marginTop: 8, lineHeight: 18 },
 });

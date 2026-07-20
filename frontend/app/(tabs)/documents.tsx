@@ -11,6 +11,7 @@ import FilePicker, { SelectedFile } from "../../src/components/FilePicker";
 import { ImportMethodSheet, ImportMode, ImportProgressModal, ImportState } from "../../src/components/DocumentImportFlow";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 import { useThemeStore } from "../../src/store/useThemeStore";
+import { pruneEmptyStudyPlanItems } from "../../src/data/study-plan";
 
 interface DocumentRow { id: string; title: string; cat: string; content: string; source: string; last_read_at?: string | null; }
 interface Folder { name: string; count: number; }
@@ -36,11 +37,11 @@ function RecentRow({ document, onPress }: { document: DocumentRow; onPress: () =
   return <TouchableOpacity style={[styles.docRow, { backgroundColor: isDark ? colors.surfaceDark : colors.surface }]} onPress={onPress}><View style={[styles.typeIcon, { backgroundColor: isDark ? "#2E3038" : colors.iconBackground }]}><TypeIcon size={19} color={type.color} /></View><View style={styles.rowText}><Text numberOfLines={1} style={[styles.rowTitle, { color: isDark ? colors.textDark : colors.text }]}>{document.title}</Text><Text style={styles.meta}>{type.label}{document.last_read_at ? ` · ${new Date(document.last_read_at).toLocaleDateString()}` : ""}</Text></View><MoreHorizontal size={20} color={colors.textSecondary} /></TouchableOpacity>;
 }
 
-function SelectableRecentRow({ document, selected, onPress, onLongPress }: { document: DocumentRow; selected: boolean; onPress: () => void; onLongPress: () => void }) {
+function SelectableRecentRow({ document, selected, selectionMode, onPress, onLongPress }: { document: DocumentRow; selected: boolean; selectionMode: boolean; onPress: () => void; onLongPress: () => void }) {
   const type = documentType(document);
   const TypeIcon = type.icon;
   const isDark = useThemeStore((state) => state.theme === "dark");
-  return <TouchableOpacity style={[styles.docRow, { backgroundColor: selected ? (isDark ? "#353740" : "#f1f2f4") : (isDark ? colors.surfaceDark : colors.surface) }]} onPress={onPress} onLongPress={onLongPress}><View style={[styles.typeIcon, { backgroundColor: isDark ? "#2E3038" : colors.iconBackground }]}><TypeIcon size={19} color={type.color} /></View><View style={styles.rowText}><Text numberOfLines={1} style={[styles.rowTitle, { color: isDark ? colors.textDark : colors.text }]}>{document.title}</Text><Text style={styles.meta}>{type.label}{document.last_read_at ? ` · ${new Date(document.last_read_at).toLocaleDateString()}` : ""}</Text></View><CheckCircle2 size={21} color={selected ? colors.document : "#c8c9cf"} fill={selected ? "#fff" : "transparent"} /></TouchableOpacity>;
+  return <TouchableOpacity style={[styles.docRow, { backgroundColor: selected ? (isDark ? "#353740" : "#f1f2f4") : (isDark ? colors.surfaceDark : colors.surface) }]} onPress={onPress} onLongPress={onLongPress}><View style={[styles.typeIcon, { backgroundColor: isDark ? "#2E3038" : colors.iconBackground }]}><TypeIcon size={19} color={type.color} /></View><View style={styles.rowText}><Text numberOfLines={1} style={[styles.rowTitle, { color: isDark ? colors.textDark : colors.text }]}>{document.title}</Text><Text style={styles.meta}>{type.label}{document.last_read_at ? ` · ${new Date(document.last_read_at).toLocaleDateString()}` : ""}</Text></View>{selectionMode ? <CheckCircle2 size={21} color={selected ? colors.document : (isDark ? "#565963" : "#c8c9cf")} fill={selected ? "#fff" : "transparent"} /> : null}</TouchableOpacity>;
 }
 
 function DocumentSelectionBar({ count, onCancel, onDelete }: { count: number; onCancel: () => void; onDelete: () => void }) {
@@ -51,7 +52,10 @@ function DocumentSelectionBar({ count, onCancel, onDelete }: { count: number; on
 function DocumentDeleteDialog({ visible, count, deleteRelatedQuestions, onChangeDeleteRelated, onClose, onConfirm }: { visible: boolean; count: number; deleteRelatedQuestions: boolean; onChangeDeleteRelated: (value: boolean) => void; onClose: () => void; onConfirm: () => void }) {
   const isDark = useThemeStore((state) => state.theme === "dark");
   const text = isDark ? colors.textDark : colors.text;
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.deleteOverlay} onPress={onClose}><Pressable style={[styles.deleteDialog, { backgroundColor: isDark ? colors.surfaceDark : colors.surface }]} onPress={() => undefined}><Text style={[styles.deleteTitle, { color: text }]}>{"\u5220\u9664\u6587\u6863"}</Text><TouchableOpacity style={[styles.deleteOption, !deleteRelatedQuestions && styles.deleteOptionSelected]} onPress={() => onChangeDeleteRelated(false)}><View style={styles.deleteOptionCopy}><Text style={[styles.deleteOptionTitle, { color: text }]}>{"\u4fdd\u7559\u5173\u8054\u9898\u76ee"}</Text></View><CheckCircle2 size={21} color={!deleteRelatedQuestions ? colors.document : "#c8c9cf"} fill={!deleteRelatedQuestions ? "#fff" : "transparent"} /></TouchableOpacity><TouchableOpacity style={[styles.deleteOption, deleteRelatedQuestions && styles.deleteOptionSelected]} onPress={() => onChangeDeleteRelated(true)}><View style={styles.deleteOptionCopy}><Text style={[styles.deleteOptionTitle, { color: text }]}>{"\u540c\u65f6\u5220\u9664\u5173\u8054\u9898\u76ee"}</Text></View><CheckCircle2 size={21} color={deleteRelatedQuestions ? colors.document : "#c8c9cf"} fill={deleteRelatedQuestions ? "#fff" : "transparent"} /></TouchableOpacity><View style={styles.deleteActions}><TouchableOpacity style={styles.deleteCancel} onPress={onClose}><Text style={styles.deleteCancelText}>{"\u53d6\u6d88"}</Text></TouchableOpacity><TouchableOpacity style={styles.deleteConfirm} onPress={onConfirm}><Text style={styles.deleteConfirmText}>{"\u5220\u9664"}</Text></TouchableOpacity></View></Pressable></Pressable></Modal>;
+  const optionBackground = isDark ? "#2E3038" : "#f1f1f3";
+  const selectedOptionBackground = isDark ? "#353740" : "#f1f2f4";
+  const uncheckedColor = isDark ? "#565963" : "#c8c9cf";
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.deleteOverlay} onPress={onClose}><Pressable style={[styles.deleteDialog, { backgroundColor: isDark ? colors.surfaceDark : colors.surface }]} onPress={() => undefined}><Text style={[styles.deleteTitle, { color: text }]}>{"\u5220\u9664\u6587\u6863"}</Text><TouchableOpacity style={[styles.deleteOption, { backgroundColor: !deleteRelatedQuestions ? selectedOptionBackground : optionBackground }]} onPress={() => onChangeDeleteRelated(false)}><View style={styles.deleteOptionCopy}><Text style={[styles.deleteOptionTitle, { color: text }]}>{"\u4fdd\u7559\u5173\u8054\u9898\u76ee"}</Text></View><CheckCircle2 size={21} color={!deleteRelatedQuestions ? colors.document : uncheckedColor} fill={!deleteRelatedQuestions ? "#fff" : "transparent"} /></TouchableOpacity><TouchableOpacity style={[styles.deleteOption, { backgroundColor: deleteRelatedQuestions ? selectedOptionBackground : optionBackground }]} onPress={() => onChangeDeleteRelated(true)}><View style={styles.deleteOptionCopy}><Text style={[styles.deleteOptionTitle, { color: text }]}>{"\u540c\u65f6\u5220\u9664\u5173\u8054\u9898\u76ee"}</Text></View><CheckCircle2 size={21} color={deleteRelatedQuestions ? colors.document : uncheckedColor} fill={deleteRelatedQuestions ? "#fff" : "transparent"} /></TouchableOpacity><View style={styles.deleteActions}><TouchableOpacity style={styles.deleteCancel} onPress={onClose}><Text style={styles.deleteCancelText}>{"\u53d6\u6d88"}</Text></TouchableOpacity><TouchableOpacity style={styles.deleteConfirm} onPress={onConfirm}><Text style={styles.deleteConfirmText}>{"\u5220\u9664"}</Text></TouchableOpacity></View></Pressable></Pressable></Modal>;
 }
 
 function DocumentSearchHeader({ query, onChangeQuery, onClose }: { query: string; onChangeQuery: (value: string) => void; onClose: () => void }) {
@@ -146,7 +150,7 @@ export default function DocumentLibraryScreen() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const confirmBatchDelete = () => { setDeleteRelatedQuestions(false); setDeleteDialogVisible(true); };
+  const confirmBatchDelete = () => { setDeleteRelatedQuestions(true); setDeleteDialogVisible(true); };
   const deleteDocuments = async () => {
     const database = await getDb();
     try {
@@ -164,6 +168,7 @@ export default function DocumentLibraryScreen() {
       }
       await database.runAsync("DELETE FROM documents WHERE id = ?", [documentId]);
     }
+    if (deleteRelatedQuestions) await pruneEmptyStudyPlanItems();
     setDeleteDialogVisible(false);
     exitSelection();
     await loadDocuments();
@@ -206,17 +211,17 @@ export default function DocumentLibraryScreen() {
     <ScrollView contentContainerStyle={styles.folderContent} showsVerticalScrollIndicator={false}>
       {subfolders.length > 0 ? <><Text style={styles.sectionTitle}>文件夹</Text>{subfolders.map((item) => <FolderRow key={item.name} folder={item} showMeta={false} onPress={() => router.push({ pathname: "/(tabs)/documents", params: { folder: `${folder}/${item.name}` } })} />)}</> : null}
       <Text style={[styles.sectionTitle, subfolders.length > 0 && styles.filesSectionTitle]}>文件</Text>
-      {directDocuments.map((document) => <SelectableRecentRow key={document.id} document={document} selected={selectedDocumentIds.has(document.id)} onLongPress={() => enterSelection(document.id)} onPress={() => selectedDocumentIds.size > 0 ? toggleSelection(document.id) : router.push({ pathname: "/(tabs)/doc-reader", params: { id: document.id } })} />)}
+      {directDocuments.map((document) => <SelectableRecentRow key={document.id} document={document} selected={selectedDocumentIds.has(document.id)} selectionMode={selectedDocumentIds.size > 0} onLongPress={() => enterSelection(document.id)} onPress={() => selectedDocumentIds.size > 0 ? toggleSelection(document.id) : router.push({ pathname: "/(tabs)/doc-reader", params: { id: document.id } })} />)}
       {directDocuments.length === 0 && subfolders.length === 0 ? <Text style={[styles.emptyFolder, { color: text }]}>此文件夹暂无文件</Text> : null}
     </ScrollView>
     <DocumentDeleteDialog visible={deleteDialogVisible} count={selectedDocumentIds.size} deleteRelatedQuestions={deleteRelatedQuestions} onChangeDeleteRelated={setDeleteRelatedQuestions} onClose={() => setDeleteDialogVisible(false)} onConfirm={deleteDocuments} />
   </View>;
 
   return <View style={[styles.page, { backgroundColor: bg }]}>
-    {selectedDocumentIds.size > 0 ? <DocumentSelectionBar count={selectedDocumentIds.size} onCancel={exitSelection} onDelete={confirmBatchDelete} /> : <View style={styles.header}><BackButton onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.title, { color: text }]}>文档库</Text><View style={styles.actions}><TouchableOpacity accessibilityLabel="搜索文档" onPress={() => setSearchVisible(true)}><Search size={22} color={text} /></TouchableOpacity><FilePicker onFileSelected={handleFileSelected} label="＋" iconOnly /></View></View>}
+    {selectedDocumentIds.size > 0 ? <DocumentSelectionBar count={selectedDocumentIds.size} onCancel={exitSelection} onDelete={confirmBatchDelete} /> : <View style={styles.header}><BackButton onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.title, { color: text }]}>文档库</Text><View style={styles.actions}><TouchableOpacity accessibilityLabel="搜索文档" onPress={() => setSearchVisible(true)}><Search size={22} color={text} /></TouchableOpacity><FilePicker onFileSelected={handleFileSelected} label="＋" iconOnly isDark={isDark} /></View></View>}
     <View style={styles.content}>
       <View style={styles.folderSection}><Text style={styles.sectionTitle}>文件夹</Text><ScrollView style={styles.sectionList} contentContainerStyle={styles.folderListContent} showsVerticalScrollIndicator={folders.length > 4} nestedScrollEnabled>{folders.map((item) => <FolderRow key={item.name} folder={item} onPress={() => router.push({ pathname: "/(tabs)/documents", params: { folder: item.name } })} />)}{Array.from({ length: folderPlaceholders }, (_, index) => <View key={`folder-placeholder-${index}`} style={styles.folderPlaceholder} />)}</ScrollView></View>
-      <View style={styles.recentSection}><Text style={styles.sectionTitle}>最近打开</Text><View style={styles.recentList}>{recentItems.map((document) => <SelectableRecentRow key={document.id} document={document} selected={selectedDocumentIds.has(document.id)} onLongPress={() => enterSelection(document.id)} onPress={() => selectedDocumentIds.size > 0 ? toggleSelection(document.id) : router.push({ pathname: "/(tabs)/doc-reader", params: { id: document.id } })} />)}{Array.from({ length: recentPlaceholders }, (_, index) => <View key={`recent-placeholder-${index}`} style={styles.recentPlaceholder} />)}</View></View>
+      <View style={styles.recentSection}><Text style={styles.sectionTitle}>最近打开</Text><View style={styles.recentList}>{recentItems.map((document) => <SelectableRecentRow key={document.id} document={document} selected={selectedDocumentIds.has(document.id)} selectionMode={selectedDocumentIds.size > 0} onLongPress={() => enterSelection(document.id)} onPress={() => selectedDocumentIds.size > 0 ? toggleSelection(document.id) : router.push({ pathname: "/(tabs)/doc-reader", params: { id: document.id } })} />)}{Array.from({ length: recentPlaceholders }, (_, index) => <View key={`recent-placeholder-${index}`} style={styles.recentPlaceholder} />)}</View></View>
     </View>
     <ImportMethodSheet file={selectedFile} visible={methodSheetVisible} onSelect={startImport} onClose={() => setMethodSheetVisible(false)} />
     <ImportProgressModal state={importState} longWait={longWait} onRetry={() => { if (importState.status === "failed") startImport(importState.mode); }} onClose={() => { setImportState({ status: "idle" }); setSelectedFile(null); }} onViewQuestions={() => { setImportState({ status: "idle" }); setSelectedFile(null); router.push("/(tabs)/questions"); }} onViewDocument={() => { if (importState.status !== "success") return; const documentId = importState.documentId; setImportState({ status: "idle" }); setSelectedFile(null); router.push({ pathname: "/(tabs)/doc-reader", params: { id: documentId } }); }} />

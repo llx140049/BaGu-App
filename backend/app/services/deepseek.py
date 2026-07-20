@@ -27,7 +27,7 @@ SYSTEM_PROMPT = """你是一个严谨的技术面试题与答案生成助手。�
 ]"""
 
 
-SYSTEM_PROMPT += "\nFor every question object, also include tags: an array of 1 or 2 broad, reusable Chinese knowledge tags. First generalize detailed concepts to their shared parent topic: for example, 波的干涉、波动、机械波 all use 波; React useEffect、组件渲染 all use React. Do not use a phenomenon, method, chapter title, document/file title, duplicate concept, or deep hierarchy path as a tag."
+SYSTEM_PROMPT += "\nFor every question object, also include tags: an array containing exactly 1 broad, reusable Chinese knowledge tag. Reuse the same tag for related questions in this batch; keep the whole batch to a small shared tag set (normally no more than 4 tags). First generalize detailed concepts to their shared parent topic: for example, 波的干涉、波动、机械波 all use 波; React useEffect、组件渲染 all use React. Do not use a phenomenon, method, chapter title, document/file title, duplicate concept, or deep hierarchy path as a tag."
 
 
 async def _call_deepseek(prompt: str, max_tokens: int = 4096, system: str = "") -> str:
@@ -100,8 +100,9 @@ async def align_question_tags_with_existing(
         for index, question in enumerate(questions[:80])
     ]
     prompt = (
-        "Assign 1 or 2 Chinese knowledge tags to every question below. Prefer a relevant existing tag, "
-        "or create one concise parent tag only when no existing tag fits. Group related subtopics under their "
+        "Assign exactly 1 Chinese knowledge tag to every question below. Prefer a relevant existing tag, "
+        "or create one concise parent tag only when no existing tag fits. Reuse tags across related questions "
+        "and use at most 4 distinct tags for the whole batch. Group related subtopics under their "
         "shared feature: 曲线运动 and 相对运动 should both use 质点运动学 when that tag exists. "
         "Do not use document titles, detailed phenomena, duplicate concepts, or deep paths. "
         "Return only JSON array objects: [{\"index\": 0, \"tags\": [\"标签\"]}].\n\n"
@@ -128,11 +129,11 @@ async def align_question_tags_with_existing(
             continue
         index = item["index"]
         if 0 <= index < len(aligned) and isinstance(item.get("tags"), list):
-            aligned[index] = [str(tag).strip() for tag in item["tags"] if str(tag).strip()][:2]
+            aligned[index] = [str(tag).strip() for tag in item["tags"] if str(tag).strip()][:1]
     return aligned
 
 
-async def generate_questions_from_text(text: str) -> list[dict[str, Any]]:
+async def generate_questions_from_text(text: str, section_title: str | None = None) -> list[dict[str, Any]]:
     """
     Send text to DeepSeek API and get structured Q&A array.
     Returns list of {cat, q, a, tags?} dicts.
@@ -142,8 +143,12 @@ async def generate_questions_from_text(text: str) -> list[dict[str, Any]]:
     if len(text) > max_chars:
         truncated += "\n\n[注意：原文过长，已截断前400K字符]"
 
+    section_context = (
+        f"\n当前只处理文档章节《{section_title}》。只根据本章节内容出题，不要重复其他章节可能已有的通用题。\n"
+        if section_title else ""
+    )
     result = await _call_deepseek(
-        prompt=f"请根据以下文本内容生成面试题：\n\n{truncated}",
+        prompt=f"请根据以下文本内容生成面试题：{section_context}\n{truncated}",
         max_tokens=8192,
         system=SYSTEM_PROMPT,
     )

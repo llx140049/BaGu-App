@@ -74,8 +74,8 @@ export default function CollectionScreen() {
     <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
       {questions.map((question) => <TouchableOpacity key={question.id} style={[styles.questionRow, { backgroundColor: selectedIds.has(question.id) ? (isDark ? "#353740" : "#F1F2F4") : surface }]} onLongPress={() => setSelectedIds(new Set([question.id]))} onPress={() => selectedIds.size > 0 ? toggleSelection(question.id) : router.push({ pathname: "/(tabs)/question-editor", params: { id: question.id } })}>
         <View style={[styles.questionIcon, { backgroundColor: isDark ? "#2E3038" : `${colors.primary}18` }]}><BookOpen size={18} color={colors.primary} /></View>
-        <View style={styles.rowCopy}><Text numberOfLines={1} style={[styles.questionText, { color: c }]}>{question.q}</Text><View style={styles.questionTags}>{question.tagPaths.map((tag) => <View key={`${question.id}-${tag}`} style={styles.questionTag}><Tag size={12} color={colors.primary} strokeWidth={2.2} /><Text numberOfLines={1} style={styles.questionTagText}>{tag}</Text></View>)}</View></View>
-        {selectedIds.size > 0 ? <CheckCircle2 size={21} color={selectedIds.has(question.id) ? colors.primary : "#c8c9cf"} fill={selectedIds.has(question.id) ? "#fff" : "transparent"} /> : null}
+        <View style={styles.rowCopy}><Text numberOfLines={1} style={[styles.questionText, { color: c }]}>{question.q}</Text><View style={styles.questionTags}>{question.tagPaths.map((tag) => <View key={`${question.id}-${tag}`} style={[styles.questionTag, { backgroundColor: isDark ? "#3A3023" : colors.primaryLight }]}><Tag size={12} color={colors.primary} strokeWidth={2.2} /><Text numberOfLines={1} style={styles.questionTagText}>{tag}</Text></View>)}</View></View>
+        {selectedIds.size > 0 ? <CheckCircle2 size={21} color={selectedIds.has(question.id) ? colors.primary : (isDark ? "#565963" : "#c8c9cf")} fill={selectedIds.has(question.id) ? "#fff" : "transparent"} /> : null}
       </TouchableOpacity>)}
       {questions.length === 0 ? <Text style={styles.empty}>{emptyText}</Text> : null}
     </ScrollView>

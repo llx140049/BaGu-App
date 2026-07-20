@@ -6,6 +6,7 @@ import { getDb } from "../../src/data/db";
 import { parseQuestionTags } from "../../src/data/tagging";
 import { colors } from "../../src/tokens/colors";
 import { genId } from "../../src/data/utils";
+import { useThemeStore } from "../../src/store/useThemeStore";
 
 interface QuestionRow { id: string; cat: string; q: string; a: string; tags?: string | null; }
 interface ProgressRow { id: string; is_starred?: number | boolean; }
@@ -69,6 +70,7 @@ export default function QuestionEditorScreen() {
     setIsFavorite(next);
   };
 
-  if (!question) return <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.primary} /><Text style={{ color: colors.textSecondary, marginTop: 10 }}>正在加载题目</Text></View>;
+  const isDark = useThemeStore((state) => state.theme === "dark");
+  if (!question) return <View style={{ flex: 1, backgroundColor: isDark ? colors.bgDark : colors.bg, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.primary} /><Text style={{ color: colors.textSecondary, marginTop: 10 }}>正在加载题目</Text></View>;
   return <QuestionEditor question={question} categories={categories} onClose={() => router.back()} onSave={saveQuestion} onDelete={deleteQuestion} onDuplicate={duplicateQuestion} isFavorite={isFavorite} onToggleFavorite={toggleFavorite} />;
 }

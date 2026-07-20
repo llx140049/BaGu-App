@@ -18,7 +18,17 @@ export async function getStudyPlan(): Promise<StudyPlan> {
   const configuredTarget = Number(targetRow?.value);
   try {
     const parsed = JSON.parse(row?.value ?? "");
-    if (Array.isArray(parsed?.items)) return { dailyTarget: Number.isFinite(configuredTarget) && configuredTarget > 0 ? configuredTarget : (Number(parsed.dailyTarget) || 0), items: parsed.items.filter((item: any) => typeof item?.tag === "string") };
+    if (Array.isArray(parsed?.items)) {
+      const plan = { dailyTarget: Number.isFinite(configuredTarget) && configuredTarget > 0 ? configuredTarget : (Number(parsed.dailyTarget) || 0), items: parsed.items.filter((item: any) => typeof item?.tag === "string") as StudyPlanItem[] };
+      const rows: { cat: string; tags?: string | null }[] = await database.getAllAsync("SELECT cat, tags FROM questions");
+      const items = plan.items.filter((item) => rows.some((question) => parseQuestionTags(question.tags, question.cat).some((tag) => tag === item.tag || tag.startsWith(`${item.tag}/`))));
+      if (items.length !== plan.items.length) {
+        const cleanedPlan = { ...plan, items };
+        await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [PLAN_KEY, JSON.stringify(cleanedPlan)]);
+        return cleanedPlan;
+      }
+      return plan;
+    }
   } catch {}
   return { dailyTarget: Number.isFinite(configuredTarget) && configuredTarget > 0 ? configuredTarget : 0, items: [] };
 }
@@ -26,6 +36,15 @@ export async function getStudyPlan(): Promise<StudyPlan> {
 export async function saveStudyPlan(plan: StudyPlan) {
   const database = await getDb();
   await database.runAsync("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [PLAN_KEY, JSON.stringify(plan)]);
+}
+
+/** Removes plan entries that no longer have any questions after a source is deleted. */
+export async function pruneEmptyStudyPlanItems() {
+  const [plan, database] = await Promise.all([getStudyPlan(), getDb()]);
+  const rows: { cat: string; tags?: string | null }[] = await database.getAllAsync("SELECT cat, tags FROM questions");
+  const items = plan.items.filter((item) => rows.some((row) => parseQuestionTags(row.tags, row.cat).some((tag) => tag === item.tag || tag.startsWith(`${item.tag}/`))));
+  if (items.length !== plan.items.length) await saveStudyPlan({ ...plan, items });
+  return plan.items.length - items.length;
 }
 
 export async function getDailyNewTarget() {

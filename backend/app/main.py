@@ -11,7 +11,8 @@ from app.api.v1 import auth, documents, home, questions, upload, progress, stats
 async def lifespan(app: FastAPI):
     # Create tables for a fresh development database. Production deployments
     # should run `alembic upgrade head` before starting the API.
-    await init_db()
+    if settings.AUTO_CREATE_TABLES:
+        await init_db()
     yield
     # Shutdown
 

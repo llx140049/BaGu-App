@@ -2,8 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
-from pathlib import Path
+from fastapi.responses import Response
 import mimetypes
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Document, Question
 from app.core.config import settings
+from app.services.object_storage import ObjectNotFoundError, object_storage
 from app.schemas.schemas import DocumentCreate, DocumentResponse, DocumentUpdate, ReadingProgressUpdate
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -50,11 +50,13 @@ async def create_document(body: DocumentCreate, user_id: str = Depends(get_curre
 @router.get("/document-assets/{asset_dir}/{filename}")
 async def get_document_asset(asset_dir: str, filename: str):
     """Serve generated Markdown images. Keys are random upload UUID paths."""
-    upload_dir = Path(settings.UPLOAD_DIR).resolve()
-    asset_path = (upload_dir / asset_dir / filename).resolve()
-    if upload_dir not in asset_path.parents or not asset_path.is_file() or asset_path.suffix.lower() != ".png":
+    if not filename.lower().endswith(".png"):
         raise HTTPException(404, detail="Document asset not found")
-    return FileResponse(asset_path, media_type="image/png")
+    try:
+        content = await object_storage.get(f"{asset_dir}/{filename}")
+    except (ObjectNotFoundError, ValueError):
+        raise HTTPException(404, detail="Document asset not found")
+    return Response(content=content, media_type="image/png")
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
@@ -67,11 +69,16 @@ async def get_original_file(document_id: UUID, user_id: str = Depends(get_curren
     document = await _document_or_404(document_id, _user_uuid(user_id), db)
     if not document.original_file_key:
         raise HTTPException(404, detail="Original file not available")
-    upload_dir = Path(settings.UPLOAD_DIR).resolve()
-    file_path = (upload_dir / document.original_file_key).resolve()
-    if upload_dir not in file_path.parents or not file_path.is_file():
+    try:
+        content = await object_storage.get(document.original_file_key)
+    except (ObjectNotFoundError, ValueError):
         raise HTTPException(404, detail="Original file not found")
-    return FileResponse(file_path, media_type=mimetypes.guess_type(document.source_file_name)[0] or "application/octet-stream", filename=document.source_file_name or document.title)
+    filename = (document.source_file_name or document.title).replace('"', "")
+    return Response(
+        content=content,
+        media_type=mimetypes.guess_type(document.source_file_name)[0] or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.put("/{document_id}", response_model=DocumentResponse)

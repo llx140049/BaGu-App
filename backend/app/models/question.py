@@ -30,6 +30,31 @@ class Document(Base):
         return bool(self.original_file_key)
 
 
+class AppUser(Base):
+    __tablename__ = "app_users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(320), nullable=False, unique=True, index=True)
+    password_hash = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class SyncSnapshot(Base):
+    __tablename__ = "sync_snapshots"
+
+    user_id = Column(UUID(as_uuid=True), primary_key=True)
+    questions = Column(JSON, default=dict)
+    progress = Column(JSON, default=dict)
+    documents = Column(JSON, default=dict)
+    settings = Column(JSON, default=dict)
+    study_records = Column(JSON, default=dict)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Question(Base):
     __tablename__ = "questions"
 

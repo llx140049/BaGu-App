@@ -17,6 +17,7 @@ if config.config_file_name:
 sync_database_url = (
     settings.DATABASE_URL
     .replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    .replace("ssl=", "sslmode=")
     .replace("sqlite+aiosqlite://", "sqlite://")
 )
 config.set_main_option("sqlalchemy.url", sync_database_url)

@@ -2,6 +2,7 @@ import os
 import uuid
 import traceback
 import re
+from difflib import SequenceMatcher
 from pathlib import Path
 from collections import defaultdict
 from urllib.parse import unquote
@@ -14,6 +15,7 @@ from app.core.security import get_current_user
 from app.models.question import Document, Question
 from app.services.pdf_service import extract_markdown_from_pdf, extract_text_from_markdown, extract_text_from_pdf
 from app.services.deepseek import align_question_tags_with_existing, generate_questions_from_text, generate_tags_from_text
+from app.services.object_storage import object_storage
 
 router = APIRouter(prefix="/api/v1/upload", tags=["upload"])
 
@@ -21,6 +23,7 @@ UPLOAD_DIR = Path(settings.UPLOAD_DIR)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
+CHUNK_MAX_CHARS = 30_000
 
 
 def _normalize_tags(value) -> list[str]:
@@ -40,7 +43,109 @@ def _normalize_tags(value) -> list[str]:
 
 
 def _normalize_question_tags(value) -> list[str]:
-    return _normalize_tags(value)[:2]
+    # A question belongs to one reusable parent topic. Multiple tags made the
+    # study scope fragment into many near-duplicate, overly specific entries.
+    return _normalize_tags(value)[:1]
+
+
+def _section_title(line: str, fallback_index: int) -> str:
+    heading = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+    if heading:
+        return heading.group(1).strip()
+    page = re.match(r"^---\s*(?:第\s*)?(\d+)\s*(?:页|page)\s*---\s*$", line, re.IGNORECASE)
+    if page:
+        return f"第 {page.group(1)} 页"
+    return f"第 {fallback_index} 段"
+
+
+def _split_long_section(title: str, content: str) -> list[dict]:
+    """Split an oversized section on paragraph boundaries, then on lines."""
+    chunks: list[dict] = []
+    current = ""
+    for paragraph in re.split(r"\n\s*\n", content):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        if current and len(current) + len(paragraph) + 2 > CHUNK_MAX_CHARS:
+            chunks.append({"title": title, "content": current})
+            current = ""
+        if len(paragraph) > CHUNK_MAX_CHARS:
+            if current:
+                chunks.append({"title": title, "content": current})
+                current = ""
+            for start in range(0, len(paragraph), CHUNK_MAX_CHARS):
+                chunks.append({"title": title, "content": paragraph[start:start + CHUNK_MAX_CHARS]})
+        else:
+            current = f"{current}\n\n{paragraph}".strip()
+    if current:
+        chunks.append({"title": title, "content": current})
+    return chunks
+
+
+def split_study_material(text: str) -> list[dict]:
+    """Create model-sized chunks using Markdown headings or PDF page separators."""
+    sections: list[dict] = []
+    current_title = "文档概览"
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        if re.match(r"^#{1,6}\s+\S", line) or re.match(r"^---\s*(?:第\s*)?\d+\s*(?:页|page)\s*---\s*$", line, re.IGNORECASE):
+            content = "\n".join(current_lines).strip()
+            if content:
+                sections.append({"title": current_title, "content": content})
+            current_title = _section_title(line, len(sections) + 1)
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+    content = "\n".join(current_lines).strip()
+    if content:
+        sections.append({"title": current_title, "content": content})
+
+    chunks: list[dict] = []
+    pending_titles: list[str] = []
+    pending_content = ""
+    for section in sections or [{"title": "文档概览", "content": text.strip()}]:
+        for piece in _split_long_section(section["title"], section["content"]):
+            if pending_content and len(pending_content) + len(piece["content"]) + 2 <= CHUNK_MAX_CHARS:
+                pending_content = f"{pending_content}\n\n{piece['content']}"
+                if piece["title"] not in pending_titles:
+                    pending_titles.append(piece["title"])
+                continue
+            if pending_content:
+                chunks.append({"title": "、".join(pending_titles), "titles": pending_titles, "content": pending_content})
+            pending_titles = [piece["title"]]
+            pending_content = piece["content"]
+    if pending_content:
+        chunks.append({"title": "、".join(pending_titles), "titles": pending_titles, "content": pending_content})
+    return [chunk for chunk in chunks if chunk["content"].strip()]
+
+
+def _question_key(question: str) -> str:
+    return re.sub(r"[^\w\u4e00-\u9fff]", "", question).casefold()
+
+
+def _are_similar_questions(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if min(len(left), len(right)) < 8:
+        return False
+    if left in right or right in left:
+        return True
+    return SequenceMatcher(None, left, right).ratio() >= 0.88
+
+
+def _deduplicate_questions(questions: list[dict]) -> tuple[list[dict], int]:
+    """Keep the first clear version of duplicate or near-duplicate questions."""
+    unique: list[dict] = []
+    keys: list[str] = []
+    removed = 0
+    for question in questions:
+        key = _question_key(str(question.get("q", "")))
+        if not key or any(_are_similar_questions(key, seen) for seen in keys):
+            removed += 1
+            continue
+        keys.append(key)
+        unique.append(question)
+    return unique, removed
 
 
 async def _align_question_tags(questions: list[dict], existing_tags: list[str]) -> None:
@@ -90,6 +195,7 @@ def _preview_response(preview_token: str, preview: dict) -> dict:
         "total": len(preview["questions"]),
         "generate_questions": preview["generate_questions"],
         "tags": preview.get("tags", []),
+        "coverage": preview.get("coverage"),
         "content": preview["content"],
         "categories": [
             {"cat": cat, "count": len(items), "questions": items}
@@ -118,10 +224,67 @@ def _fix_qa_swap(q_item: dict) -> dict:
     return q_item
 
 
+async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
+    """Generate chunk by chunk so long documents are covered before preview."""
+    generated: list[dict] = []
+    covered: dict[str, int] = {}
+    all_sections: list[str] = []
+    generation_errors: list[str] = []
+    for chunk in split_study_material(preview["question_content"]):
+        title = chunk["title"]
+        chunk_sections = chunk.get("titles", [title])
+        for section_title in chunk_sections:
+            if section_title not in all_sections:
+                all_sections.append(section_title)
+        try:
+            questions = await generate_questions_from_text(chunk["content"], section_title=title)
+        except Exception as exc:
+            # Preserve successfully generated sections and surface this one as
+            # uncovered in the preview instead of losing the entire import.
+            message = str(exc)
+            if "HTTP 402" in message or "Insufficient Balance" in message:
+                message = "AI 服务余额不足，请充值后重试"
+            generation_errors.append(message)
+            continue
+        valid_count = 0
+        for question in questions:
+            if not isinstance(question, dict) or not {"cat", "q", "a"}.issubset(question):
+                continue
+            item = _fix_qa_swap({
+                "cat": str(question["cat"]),
+                "q": str(question["q"]),
+                "a": str(question["a"]),
+                "source_document_id": preview["document_id"],
+                "source_document_ids": [preview["document_id"]],
+                "tags": _exclude_filename_tags(_normalize_question_tags(question.get("tags")), preview["file_name"]) or preview.get("tags", [])[:1],
+                "_section": title,
+            })
+            generated.append(item)
+            valid_count += 1
+        if valid_count:
+            for section_title in chunk_sections:
+                covered[section_title] = covered.get(section_title, 0) + valid_count
+
+    questions, deduplicated = _deduplicate_questions(generated)
+    coverage = {
+        "covered_sections": [
+            {"title": title, "count": covered[title]}
+            for title in all_sections if title in covered
+        ],
+        "uncovered_sections": [title for title in all_sections if title not in covered],
+        "generated_count": len(generated),
+        "deduplicated_count": deduplicated,
+        "question_count": len(questions),
+        "generation_errors": generation_errors,
+    }
+    return questions, coverage
+
+
 @router.post("/pdf")
 async def upload_pdf(
     file: UploadFile = File(...),
     generate_questions: bool = Form(True),
+    _user_id: str = Depends(get_current_user),
 ):
     try:
         filename = unquote(file.filename or "untitled").replace("\\", "/").split("/")[-1] or "untitled"
@@ -151,9 +314,22 @@ async def upload_pdf(
                 image_dir.mkdir(parents=True, exist_ok=True)
                 text = await extract_markdown_from_pdf(file_bytes, filename, image_dir, f"/api/v1/document-assets/{image_dir.name}/")
                 question_text = await extract_text_from_pdf(file_bytes, filename)
+                original_file_key = await object_storage.put(
+                    save_path.name,
+                    file_bytes,
+                    file.content_type or "application/pdf",
+                )
+                for image_file in image_dir.iterdir():
+                    if image_file.is_file() and image_file.suffix.lower() == ".png":
+                        await object_storage.put(
+                            f"{image_dir.name}/{image_file.name}",
+                            image_file.read_bytes(),
+                            "image/png",
+                        )
             else:
                 text = await extract_text_from_markdown(file_bytes, filename)
                 question_text = text
+                original_file_key = ""
             if not text.strip():
                 raise HTTPException(400, detail="无法从文件中提取到任何文本内容")
 
@@ -162,20 +338,13 @@ async def upload_pdf(
 
             validated = []
             if generate_questions:
-                questions = await generate_questions_from_text(question_text)
-                for q in questions:
-                    if not isinstance(q, dict) or "cat" not in q or "q" not in q or "a" not in q:
-                        continue
-                    item = {
-                        "cat": str(q["cat"]),
-                        "q": str(q["q"]),
-                        "a": str(q["a"]),
-                        "source_document_id": document_id,
-                        "source_document_ids": [document_id],
-                        "tags": _exclude_filename_tags(_normalize_question_tags(q.get("tags")), filename) or document_tags[:2],
-                    }
-                    item = _fix_qa_swap(item)
-                    validated.append(item)
+                preview_for_generation = {
+                    "document_id": document_id,
+                    "file_name": filename,
+                    "question_content": question_text,
+                    "tags": document_tags,
+                }
+                validated, coverage = await _generate_preview_questions(preview_for_generation)
 
             if generate_questions and not validated:
                 raise HTTPException(500, detail="AI 未能生成有效题目，请检查 DeepSeek API Key 或重试")
@@ -186,10 +355,12 @@ async def upload_pdf(
                 "file_name": filename,
                 "file_type": file_type,
                 "file_path": str(save_path),
+                "original_file_key": original_file_key,
                 "content": text,
                 "question_content": question_text,
                 "questions": validated,
                 "tags": document_tags,
+                "coverage": coverage if generate_questions else None,
                 "generate_questions": generate_questions,
             }
 
@@ -209,7 +380,7 @@ async def upload_pdf(
 
 
 @router.post("/generate")
-async def generate_preview_questions(body: dict):
+async def generate_preview_questions(body: dict, _user_id: str = Depends(get_current_user)):
     """Generate questions only after the document has been parsed successfully."""
     token = body.get("preview_token", "")
     preview = _preview_store.get(token)
@@ -217,23 +388,12 @@ async def generate_preview_questions(body: dict):
         raise HTTPException(404, detail="导入数据已过期，请重新选择文件")
 
     try:
-        generated = await generate_questions_from_text(preview["question_content"])
-        validated = []
-        for question in generated:
-            if not isinstance(question, dict) or not {"cat", "q", "a"}.issubset(question):
-                continue
-            item = _fix_qa_swap({
-                "cat": str(question["cat"]),
-                "q": str(question["q"]),
-                "a": str(question["a"]),
-                "source_document_id": preview["document_id"],
-                "source_document_ids": [preview["document_id"]],
-                "tags": _exclude_filename_tags(_normalize_question_tags(question.get("tags")), preview["file_name"]) or preview.get("tags", [])[:2],
-            })
-            validated.append(item)
+        validated, coverage = await _generate_preview_questions(preview)
         if not validated:
-            raise HTTPException(500, detail="AI 未能生成有效题目，请检查 DeepSeek API Key 或重试")
+            detail = coverage["generation_errors"][0] if coverage["generation_errors"] else "AI 未能生成有效题目，请检查模型服务后重试"
+            raise HTTPException(502, detail=detail)
         preview["questions"] = validated
+        preview["coverage"] = coverage
         preview["generate_questions"] = True
         return _preview_response(token, preview)
     except HTTPException:
@@ -298,7 +458,7 @@ async def confirm_upload(
             content=content,
             source="AI 导入",
             source_file_name=preview["file_name"],
-            original_file_key=Path(preview["file_path"]).name if preview["file_type"] == "pdf" else "",
+            original_file_key=preview.get("original_file_key", "") if preview["file_type"] == "pdf" else "",
             tags=document_tags,
         )
         db.add(document)
@@ -306,7 +466,7 @@ async def confirm_upload(
         document.content = content
         document.cat = category
         document.source_file_name = preview["file_name"]
-        document.original_file_key = Path(preview["file_path"]).name if preview["file_type"] == "pdf" else ""
+        document.original_file_key = preview.get("original_file_key", "") if preview["file_type"] == "pdf" else ""
         document.tags = document_tags
     for item in questions:
         # Keep generated questions in the same directory as their source document.

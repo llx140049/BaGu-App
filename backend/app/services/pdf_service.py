@@ -6,6 +6,31 @@ import tempfile
 from pathlib import Path
 import pdfplumber
 import pymupdf4llm
+import fitz
+
+
+async def extract_text_from_pdf_light(file_bytes: bytes, filename: str = "") -> str:
+    """Low-memory text-only extraction for large PDFs.
+
+    Avoids rasterising pages and loading image assets, which can exceed a small
+    web-service instance even when the original PDF itself is modest in size.
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        parts: list[str] = []
+        with fitz.open(tmp_path) as pdf:
+            for index, page in enumerate(pdf):
+                text = page.get_text("text").strip()
+                if text:
+                    parts.append(f"--- Page {index + 1} ---\n{text}")
+        return "\n\n".join(parts)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 async def extract_text_from_pdf(file_bytes: bytes, filename: str = "") -> str:

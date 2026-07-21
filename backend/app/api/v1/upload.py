@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Document, Question
-from app.services.pdf_service import extract_markdown_from_pdf, extract_text_from_markdown, extract_text_from_pdf
+from app.services.pdf_service import extract_markdown_from_pdf, extract_text_from_markdown, extract_text_from_pdf, extract_text_from_pdf_light
 from app.services.deepseek import align_question_tags_with_existing, generate_questions_from_text, generate_tags_from_text
 from app.services.object_storage import object_storage
 
@@ -26,6 +26,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
 CHUNK_MAX_CHARS = 30_000
+LARGE_PDF_BYTES = 15 * 1024 * 1024
 
 
 def _file_extension(filename: str) -> tuple[str, str]:
@@ -39,6 +40,44 @@ def _file_extension(filename: str) -> tuple[str, str]:
 
 def _safe_upload_filename(filename: str) -> str:
     return unquote(filename or "untitled").replace("\\", "/").split("/")[-1] or "untitled"
+
+
+async def _create_text_only_preview(
+    filename: str,
+    text: str,
+    original_file_key: str,
+    generate_questions: bool,
+) -> dict:
+    if not text.strip():
+        raise HTTPException(400, detail="No readable text was found in this PDF")
+    document_id = str(uuid.uuid4())
+    document_tags = await _generate_document_tags(text, filename)
+    questions: list[dict] = []
+    coverage = None
+    if generate_questions:
+        questions, coverage = await _generate_preview_questions({
+            "document_id": document_id,
+            "file_name": filename,
+            "question_content": text,
+            "tags": document_tags,
+        })
+        if not questions:
+            raise HTTPException(500, detail="Could not generate valid questions")
+    preview_token = str(uuid.uuid4())
+    _preview_store[preview_token] = {
+        "document_id": document_id,
+        "file_name": filename,
+        "file_type": "pdf",
+        "file_path": "",
+        "original_file_key": original_file_key,
+        "content": text,
+        "question_content": text,
+        "questions": questions,
+        "tags": document_tags,
+        "coverage": coverage,
+        "generate_questions": generate_questions,
+    }
+    return _preview_response(preview_token, _preview_store[preview_token])
 
 
 def _normalize_tags(value) -> list[str]:
@@ -327,8 +366,20 @@ async def process_direct_upload(
     object_key = str(body.get("object_key", ""))
     if not object_key.startswith(f"incoming/{user_id}/"):
         raise HTTPException(403, detail="Invalid upload key")
+    keep_original = False
     try:
         file_bytes = await object_storage.get(object_key)
+        if len(file_bytes) > LARGE_PDF_BYTES:
+            text = await extract_text_from_pdf_light(file_bytes, filename)
+            del file_bytes
+            result = await _create_text_only_preview(
+                filename,
+                text,
+                object_key,
+                bool(body.get("generate_questions", False)),
+            )
+            keep_original = True
+            return result
         temp_file = SpooledTemporaryFile(max_size=1024 * 1024)
         temp_file.write(file_bytes)
         temp_file.seek(0)
@@ -343,10 +394,11 @@ async def process_direct_upload(
             _user_id=user_id,
         )
     finally:
-        try:
-            await object_storage.delete([object_key])
-        except Exception:
-            pass
+        if not keep_original:
+            try:
+                await object_storage.delete([object_key])
+            except Exception:
+                pass
 
 
 @router.post("/pdf")

@@ -1,4 +1,5 @@
-import Pdf from "react-native-pdf";
+import { useEffect } from "react";
+import { Text, View } from "react-native";
 
 interface PdfDocumentProps {
   url: string;
@@ -8,6 +9,14 @@ interface PdfDocumentProps {
   onError: (error: object) => void;
 }
 
-export default function PdfDocument({ url, headers, onLoadComplete, onPageChanged, onError }: PdfDocumentProps) {
-  return <Pdf source={{ uri: url, headers, cache: false }} style={{ flex: 1, width: "100%" }} fitPolicy={0} minScale={1} maxScale={4} enableDoubleTapZoom onLoadComplete={(pages) => onLoadComplete(pages)} onPageChanged={onPageChanged} onError={onError} />;
+export default function PdfDocument({ onError }: PdfDocumentProps) {
+  useEffect(() => {
+    onError(new Error("Expo Go does not include the native PDF preview module."));
+  }, [onError]);
+
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <Text style={{ textAlign: "center" }}>PDF preview is opened with the system reader in Expo Go.</Text>
+    </View>
+  );
 }

@@ -22,12 +22,21 @@ export default function MarkdownDocument({ markdown, imageBaseUrl = "", isDark =
   const [height, setHeight] = useState(320);
   const reportHeight = `
     (function () {
-      var report = function () { window.ReactNativeWebView.postMessage(String(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))); };
+      var report = function () {
+        var height = Math.max(
+          document.body.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.scrollHeight,
+          document.documentElement.offsetHeight
+        );
+        window.ReactNativeWebView.postMessage(String(height));
+      };
       window.addEventListener('load', report);
       window.addEventListener('resize', report);
       Array.prototype.forEach.call(document.images, function (image) { image.addEventListener('load', report); image.addEventListener('error', report); });
       new MutationObserver(report).observe(document.body, { childList: true, subtree: true });
-      setTimeout(report, 50); setTimeout(report, 300); setTimeout(report, 1000); setTimeout(report, 2500);
+      if (window.ResizeObserver) new ResizeObserver(report).observe(document.body);
+      setTimeout(report, 50); setTimeout(report, 300); setTimeout(report, 1000); setTimeout(report, 2500); setTimeout(report, 5000);
     })(); true;
   `;
 

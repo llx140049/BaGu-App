@@ -83,6 +83,38 @@ export const uploadApi = {
     file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
     generateQuestions = true
   ) => {
+    const payload = Platform.OS === "web"
+      ? new Blob([file.bytes!], { type: file.mimeType || "application/octet-stream" })
+      : await (await fetch(file.uri)).blob();
+    const upload = await request<any>("/api/v1/upload/direct-url", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, size: payload.size }),
+    });
+    const storageResponse = await fetch(upload.upload_url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.mimeType || "application/octet-stream",
+        "x-upsert": "true",
+      },
+      body: payload,
+    });
+    if (!storageResponse.ok) {
+      throw new Error(`Storage upload error ${storageResponse.status}: ${await storageResponse.text()}`);
+    }
+    return request<any>("/api/v1/upload/process-direct", {
+      method: "POST",
+      body: JSON.stringify({
+        filename: file.name,
+        object_key: upload.object_key,
+        mime_type: file.mimeType,
+        generate_questions: generateQuestions,
+      }),
+    });
+  },
+  uploadPdfViaApi: async (
+    file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
+    generateQuestions = true
+  ) => {
     const formData = new FormData();
     if (Platform.OS === "web") {
       formData.append("file", new Blob([file.bytes!]), file.name);

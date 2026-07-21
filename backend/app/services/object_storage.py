@@ -59,6 +59,21 @@ class ObjectStorage:
         response.raise_for_status()
         return safe_key
 
+    async def create_signed_upload_url(self, key: str) -> str:
+        """Create a short-lived URL for clients to upload directly to Storage."""
+        if not self.uses_supabase:
+            raise RuntimeError("Direct uploads require Supabase Storage")
+        safe_key = _safe_key(key)
+        bucket = quote(settings.SUPABASE_STORAGE_BUCKET, safe="")
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1/object/upload/sign/{bucket}/{quote(safe_key, safe='/')}"
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(url, json={}, headers=self._headers())
+        response.raise_for_status()
+        signed_path = response.json().get("url")
+        if not signed_path:
+            raise RuntimeError("Supabase did not return a signed upload URL")
+        return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{signed_path}"
+
     async def get(self, key: str) -> bytes:
         safe_key = _safe_key(key)
         if not self.uses_supabase:

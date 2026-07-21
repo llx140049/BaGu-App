@@ -5,8 +5,10 @@ import re
 from difflib import SequenceMatcher
 from pathlib import Path
 from collections import defaultdict
+from tempfile import SpooledTemporaryFile
 from urllib.parse import unquote
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from starlette.datastructures import Headers
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -24,6 +26,19 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
 CHUNK_MAX_CHARS = 30_000
+
+
+def _file_extension(filename: str) -> tuple[str, str]:
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".pdf":
+        return ext, "pdf"
+    if ext in (".md", ".markdown", ".txt", ".text"):
+        return ext, "markdown"
+    raise HTTPException(400, detail="Unsupported file type")
+
+
+def _safe_upload_filename(filename: str) -> str:
+    return unquote(filename or "untitled").replace("\\", "/").split("/")[-1] or "untitled"
 
 
 def _normalize_tags(value) -> list[str]:
@@ -278,6 +293,60 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
         "generation_errors": generation_errors,
     }
     return questions, coverage
+
+
+@router.post("/direct-url")
+async def create_direct_upload_url(body: dict, user_id: str = Depends(get_current_user)):
+    """Keep large file bytes off the Render request path."""
+    filename = _safe_upload_filename(str(body.get("filename", "")))
+    ext, _ = _file_extension(filename)
+    size = int(body.get("size") or 0)
+    if size <= 0:
+        raise HTTPException(400, detail="File size is required")
+    if size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+        raise HTTPException(400, detail=f"File exceeds the {settings.MAX_UPLOAD_SIZE_MB}MB limit")
+    if not object_storage.uses_supabase:
+        raise HTTPException(503, detail="Direct uploads are not configured")
+
+    object_key = f"incoming/{user_id}/{uuid.uuid4()}{ext}"
+    try:
+        upload_url = await object_storage.create_signed_upload_url(object_key)
+    except Exception as exc:
+        raise HTTPException(502, detail=f"Could not prepare direct upload: {exc}") from exc
+    return {"upload_url": upload_url, "object_key": object_key}
+
+
+@router.post("/process-direct")
+async def process_direct_upload(
+    body: dict,
+    user_id: str = Depends(get_current_user),
+):
+    """Download a completed direct upload and reuse the normal parsing flow."""
+    filename = _safe_upload_filename(str(body.get("filename", "")))
+    _file_extension(filename)
+    object_key = str(body.get("object_key", ""))
+    if not object_key.startswith(f"incoming/{user_id}/"):
+        raise HTTPException(403, detail="Invalid upload key")
+    try:
+        file_bytes = await object_storage.get(object_key)
+        temp_file = SpooledTemporaryFile(max_size=1024 * 1024)
+        temp_file.write(file_bytes)
+        temp_file.seek(0)
+        upload_file = UploadFile(
+            filename=filename,
+            file=temp_file,
+            headers=Headers({"content-type": str(body.get("mime_type") or "application/octet-stream")}),
+        )
+        return await upload_pdf(
+            file=upload_file,
+            generate_questions=bool(body.get("generate_questions", False)),
+            _user_id=user_id,
+        )
+    finally:
+        try:
+            await object_storage.delete([object_key])
+        except Exception:
+            pass
 
 
 @router.post("/pdf")

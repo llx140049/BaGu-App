@@ -30,6 +30,21 @@ SYSTEM_PROMPT = """你是一个严谨的技术面试题与答案生成助手。�
 SYSTEM_PROMPT += "\nFor every question object, also include tags: an array containing exactly 1 broad, reusable Chinese knowledge tag. Reuse the same tag for related questions in this batch; keep the whole batch to a small shared tag set (normally no more than 4 tags). First generalize detailed concepts to their shared parent topic: for example, 波的干涉、波动、机械波 all use 波; React useEffect、组件渲染 all use React. Do not use a phenomenon, method, chapter title, document/file title, duplicate concept, or deep hierarchy path as a tag."
 
 
+# Flashcards need short answers and explicit coverage targets. This overrides
+# the legacy long-form template above without changing the API integration.
+SYSTEM_PROMPT = """You create Chinese study flashcards strictly from supplied material.
+Return only a valid JSON array. Every item must be:
+{"cat":"short Chinese category","q":"one focused Chinese question","a":"short Markdown answer","tags":["one broad Chinese topic"]}
+
+Rules:
+- Cover distinct knowledge points; do not repeat concepts with different wording.
+- Each answer must be 80–220 Chinese characters: one direct conclusion and 2–4 short bullets.
+- Do not use a fixed multi-section template, long introductions, filler, or facts absent from the material.
+- Include a code block only when the source itself provides a necessary example.
+- tags contains exactly one broad reusable Chinese topic.
+"""
+
+
 async def _call_deepseek(prompt: str, max_tokens: int = 4096, system: str = "") -> str:
     """Low-level DeepSeek API call. Returns the content string."""
     api_key = settings.DEEPSEEK_API_KEY
@@ -168,4 +183,32 @@ async def generate_questions_from_text(text: str, section_title: str | None = No
     if isinstance(parsed, list):
         return parsed
 
+    raise ValueError(f"Unexpected response format: {type(parsed)}")
+
+
+async def generate_questions_from_text(text: str, section_title: str | None = None) -> list[dict[str, Any]]:
+    """Generate concise cards with a predictable amount of coverage per chunk."""
+    truncated = text[:400_000]
+    target_count = min(8, max(4, (len(truncated) + 2499) // 2500))
+    section_context = f" Current section: {section_title}." if section_title else ""
+    result = await _call_deepseek(
+        prompt=(
+            f"Generate exactly {target_count} Chinese study questions from the material below."
+            f" Prioritize distinct concepts and stay within the flashcard answer length.{section_context}"
+            f"\n\nMaterial:\n{truncated}"
+        ),
+        max_tokens=6000,
+        system=SYSTEM_PROMPT,
+    )
+    text_clean = result.strip()
+    if text_clean.startswith("```"):
+        text_clean = text_clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    parsed = json.loads(text_clean)
+    if isinstance(parsed, dict):
+        for key in ("questions", "items", "data", "result"):
+            if isinstance(parsed.get(key), list):
+                return parsed[key]
+        return [parsed]
+    if isinstance(parsed, list):
+        return parsed
     raise ValueError(f"Unexpected response format: {type(parsed)}")

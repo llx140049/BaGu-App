@@ -25,7 +25,7 @@ UPLOAD_DIR = Path(settings.UPLOAD_DIR)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
-CHUNK_MAX_CHARS = 30_000
+CHUNK_MAX_CHARS = 12_000
 LARGE_PDF_BYTES = 15 * 1024 * 1024
 
 
@@ -278,6 +278,16 @@ def _fix_qa_swap(q_item: dict) -> dict:
     return q_item
 
 
+def _compact_answer(answer: str, limit: int = 500) -> str:
+    """Keep generated answers usable as review cards even if a model ignores the prompt."""
+    answer = answer.strip()
+    if len(answer) <= limit:
+        return answer
+    cut = answer[:limit]
+    boundary = max(cut.rfind("\n"), cut.rfind("。"), cut.rfind("；"))
+    return (cut[:boundary] if boundary >= limit // 2 else cut).rstrip() + "…"
+
+
 async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
     """Generate chunk by chunk so long documents are covered before preview."""
     generated: list[dict] = []
@@ -307,7 +317,7 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
             item = _fix_qa_swap({
                 "cat": str(question["cat"]),
                 "q": str(question["q"]),
-                "a": str(question["a"]),
+                "a": _compact_answer(str(question["a"])),
                 "source_document_id": preview["document_id"],
                 "source_document_ids": [preview["document_id"]],
                 "tags": _exclude_filename_tags(_normalize_question_tags(question.get("tags")), preview["file_name"]) or preview.get("tags", [])[:1],

@@ -18,9 +18,19 @@ interface FilePickerProps {
 function readableFileName(name?: string, uri?: string) {
   const fallback = uri?.split("/").pop() || "untitled";
   let value = name || fallback;
-  try { value = decodeURIComponent(value); } catch {}
+  try {
+    value = decodeURIComponent(value);
+  } catch {}
   const parts = value.replace(/\\/g, "/").split("/");
   return parts[parts.length - 1] || "untitled";
+}
+
+function ensureSupportedExtension(name: string, mimeType?: string) {
+  const trimmed = name.trim();
+  if (/\.[a-z0-9]+$/i.test(trimmed)) return trimmed;
+  if (mimeType === "application/pdf") return `${trimmed}.pdf`;
+  if (mimeType === "text/markdown" || mimeType === "text/plain" || mimeType?.startsWith("text/")) return `${trimmed}.md`;
+  return trimmed;
 }
 
 export default function FilePicker({ onFileSelected, label = "选择文件", isDark = false, floating = false, iconOnly = false }: FilePickerProps) {
@@ -30,26 +40,47 @@ export default function FilePicker({ onFileSelected, label = "选择文件", isD
   const labelStyle = [styles.buttonText, iconOnly && styles.iconOnlyText, iconOnly && { color: isDark ? colors.textDark : colors.text }];
 
   if (Platform.OS === "web") {
-    return <View>
-      <TouchableOpacity style={buttonStyle} onPress={() => inputRef.current?.click()}><Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text></TouchableOpacity>
-      <input ref={inputRef} type="file" accept=".pdf,.md,.markdown,.txt" style={{ display: "none" }} onChange={async (event) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        if (file.size > MAX_UPLOAD_SIZE_BYTES) { Alert.alert("文件过大", "单个文件最大支持 100MB。"); event.target.value = ""; return; }
-        setFileName(file.name);
-        onFileSelected({ uri: URL.createObjectURL(file), name: file.name, bytes: await file.arrayBuffer(), mimeType: file.type, size: file.size });
-        event.target.value = "";
-      }} />
-    </View>;
+    return (
+      <View>
+        <TouchableOpacity style={buttonStyle} onPress={() => inputRef.current?.click()}>
+          <Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text>
+        </TouchableOpacity>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,.md,.markdown,.txt,text/*"
+          style={{ display: "none" }}
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+              Alert.alert("文件过大", "单个文件最大支持100MB。");
+              event.target.value = "";
+              return;
+            }
+            const name = ensureSupportedExtension(readableFileName(file.name, file.name), file.type);
+            setFileName(name);
+            onFileSelected({ uri: URL.createObjectURL(file), name, bytes: await file.arrayBuffer(), mimeType: file.type, size: file.size });
+            event.target.value = "";
+          }}
+        />
+      </View>
+    );
   }
 
   const pickNativeFile = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ["application/pdf", "text/markdown", "text/plain"], copyToCacheDirectory: true });
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "text/*", "text/markdown", "text/plain"],
+        copyToCacheDirectory: true,
+      });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
-      if (file.size && file.size > MAX_UPLOAD_SIZE_BYTES) { Alert.alert("文件过大", "单个文件最大支持 100MB。"); return; }
-      const name = readableFileName(file.name, file.uri);
+      if (file.size && file.size > MAX_UPLOAD_SIZE_BYTES) {
+        Alert.alert("文件过大", "单个文件最大支持100MB。");
+        return;
+      }
+      const name = ensureSupportedExtension(readableFileName(file.name, file.uri), file.mimeType);
       setFileName(name);
       onFileSelected({ uri: file.uri, name, mimeType: file.mimeType, size: file.size });
     } catch {
@@ -57,10 +88,14 @@ export default function FilePicker({ onFileSelected, label = "选择文件", isD
     }
   };
 
-  return <View>
-    <TouchableOpacity style={buttonStyle} onPress={pickNativeFile}><Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text></TouchableOpacity>
-    {!floating && !iconOnly ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文档，最大 100MB</Text> : null}
-  </View>;
+  return (
+    <View>
+      <TouchableOpacity style={buttonStyle} onPress={pickNativeFile}>
+        <Text style={labelStyle}>{iconOnly ? label : (fileName || label)}</Text>
+      </TouchableOpacity>
+      {!floating && !iconOnly ? <Text style={[styles.hint, { color: colors.textTertiary }]}>支持 PDF、Markdown 和文本文件，最大100MB</Text> : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

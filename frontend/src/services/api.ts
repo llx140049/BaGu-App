@@ -78,6 +78,16 @@ export const documentsApi = {
   },
 };
 
+// Supabase bucket enforces a MIME whitelist; Android pickers often report
+// octet-stream for .md files, so derive an accurate type from the extension.
+const uploadMimeType = (file: { name: string; mimeType?: string }) => {
+  const ext = file.name.toLowerCase().split(".").pop() || "";
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "md" || ext === "markdown") return "text/markdown";
+  if (ext === "txt" || ext === "text") return "text/plain";
+  return file.mimeType || "application/octet-stream";
+};
+
 export const uploadApi = {
   uploadPdf: async (
     file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
@@ -93,7 +103,7 @@ export const uploadApi = {
     const storageResponse = await fetch(upload.upload_url, {
       method: "PUT",
       headers: {
-        "Content-Type": file.mimeType || "application/octet-stream",
+        "Content-Type": uploadMimeType(file),
         "x-upsert": "true",
       },
       body: payload,
@@ -106,7 +116,7 @@ export const uploadApi = {
       body: JSON.stringify({
         filename: file.name,
         object_key: upload.object_key,
-        mime_type: file.mimeType,
+        mime_type: uploadMimeType(file),
         generate_questions: generateQuestions,
       }),
     });
@@ -138,6 +148,16 @@ export const uploadApi = {
     }),
   generateQuestions: (previewToken: string) =>
     request<any>("/api/v1/upload/generate", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
+    }),
+  generateQuestionsAsync: (previewToken: string) =>
+    request<any>("/api/v1/upload/generate", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken, async: true }),
+    }),
+  generateStatus: (previewToken: string) =>
+    request<any>("/api/v1/upload/generate-status", {
       method: "POST",
       body: JSON.stringify({ preview_token: previewToken }),
     }),

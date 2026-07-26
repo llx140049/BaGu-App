@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 import traceback
@@ -294,7 +295,11 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
     covered: dict[str, int] = {}
     all_sections: list[str] = []
     generation_errors: list[str] = []
-    for chunk in split_study_material(preview["question_content"]):
+    chunks = split_study_material(preview["question_content"])
+    progress = preview.setdefault("generation", {})
+    progress["total_chunks"] = len(chunks)
+    progress["done_chunks"] = 0
+    for chunk in chunks:
         title = chunk["title"]
         chunk_sections = chunk.get("titles", [title])
         for section_title in chunk_sections:
@@ -309,6 +314,7 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
             if "HTTP 402" in message or "Insufficient Balance" in message:
                 message = "AI 服务余额不足，请充值后重试"
             generation_errors.append(message)
+            progress["done_chunks"] += 1
             continue
         valid_count = 0
         for question in questions:
@@ -328,6 +334,7 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
         if valid_count:
             for section_title in chunk_sections:
                 covered[section_title] = covered.get(section_title, 0) + valid_count
+        progress["done_chunks"] += 1
 
     questions, deduplicated = _deduplicate_questions(generated)
     coverage = {
@@ -518,6 +525,33 @@ async def generate_preview_questions(body: dict, _user_id: str = Depends(get_cur
     if preview is None:
         raise HTTPException(404, detail="导入数据已过期，请重新选择文件")
 
+    if body.get("async"):
+        # Long generation must not outlive the proxy's ~100s idle timeout, so it
+        # runs as a background task and the client polls /generate-status.
+        generation = preview.get("generation")
+        if generation and generation.get("status") == "running":
+            # Idempotent: a repeated call only reports the already-running task.
+            return {"preview_token": token, "generation_status": "running"}
+        preview["generation"] = {"status": "running", "done_chunks": 0, "total_chunks": None}
+
+        async def _run_generation() -> None:
+            try:
+                validated, coverage = await _generate_preview_questions(preview)
+                preview["questions"] = validated
+                preview["coverage"] = coverage
+                preview["generate_questions"] = True
+                if validated:
+                    preview["generation"]["status"] = "done"
+                else:
+                    errors = coverage.get("generation_errors") or []
+                    preview["generation"]["status"] = "failed"
+                    preview["generation"]["error"] = errors[0] if errors else "AI 未能生成有效题目，请检查模型服务后重试"
+            except Exception as exc:
+                preview["generation"] = {"status": "failed", "error": str(exc)}
+
+        asyncio.create_task(_run_generation())
+        return {"preview_token": token, "generation_status": "running"}
+
     try:
         validated, coverage = await _generate_preview_questions(preview)
         if not validated:
@@ -531,6 +565,26 @@ async def generate_preview_questions(body: dict, _user_id: str = Depends(get_cur
         raise
     except Exception as exc:
         raise HTTPException(500, detail=f"生成题目失败: {str(exc)}") from exc
+
+
+@router.post("/generate-status")
+async def generate_preview_status(body: dict, _user_id: str = Depends(get_current_user)):
+    """Poll background generation; every request returns within milliseconds."""
+    token = body.get("preview_token", "")
+    preview = _preview_store.get(token)
+    if preview is None:
+        raise HTTPException(404, detail="导入数据已过期，请重新选择文件")
+    generation = preview.get("generation") or {}
+    status = generation.get("status", "idle")
+    if status == "done":
+        return {"generation_status": "done", "preview": _preview_response(token, preview)}
+    if status == "failed":
+        return {"generation_status": "failed", "detail": generation.get("error", "生成失败，请重试")}
+    return {
+        "generation_status": status,
+        "done_chunks": generation.get("done_chunks", 0),
+        "total_chunks": generation.get("total_chunks"),
+    }
 
 
 @router.post("/confirm")

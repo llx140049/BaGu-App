@@ -133,7 +133,30 @@ export default function DocumentLibraryScreen() {
       const parsed = await uploadApi.uploadPdf(selectedFile, false);
       if (mode === "generate") {
         setImportState({ status: "working", mode, stage: "generating" });
-        openPreview(await uploadApi.generateQuestions(parsed.preview_token));
+        // 生成放到后端后台执行并轮询，避免长请求被代理约 100 秒超时掐断
+        await uploadApi.generateQuestionsAsync(parsed.preview_token);
+        const startedAt = Date.now();
+        let pollFailures = 0;
+        for (;;) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          if (Date.now() - startedAt > 30 * 60 * 1000) throw new Error("生成超时，请重试");
+          let generation: any;
+          try {
+            generation = await uploadApi.generateStatus(parsed.preview_token);
+            pollFailures = 0;
+          } catch (pollError: any) {
+            if (/ 404\b/.test(pollError?.message || "")) throw new Error("导入数据已过期，请重新选择文件");
+            pollFailures += 1;
+            if (pollFailures >= 5) throw pollError;
+            continue;
+          }
+          if (generation.generation_status === "done") { openPreview(generation.preview); break; }
+          if (generation.generation_status === "failed") throw new Error(generation.detail || "生成失败，请重试");
+          setImportState({
+            status: "working", mode, stage: "generating",
+            progress: generation.total_chunks ? `${generation.done_chunks}/${generation.total_chunks}` : undefined,
+          });
+        }
       } else {
         openPreview(parsed);
       }

@@ -91,7 +91,8 @@ const uploadMimeType = (file: { name: string; mimeType?: string }) => {
 export const uploadApi = {
   uploadPdf: async (
     file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },
-    generateQuestions = true
+    generateQuestions = true,
+    onProgress?: (progress: string) => void
   ) => {
     const payload = Platform.OS === "web"
       ? new Blob([file.bytes!], { type: file.mimeType || "application/octet-stream" })
@@ -100,6 +101,7 @@ export const uploadApi = {
       method: "POST",
       body: JSON.stringify({ filename: file.name, size: payload.size }),
     });
+    onProgress?.("上传原文件");
     const storageResponse = await fetch(upload.upload_url, {
       method: "PUT",
       headers: {
@@ -127,6 +129,7 @@ export const uploadApi = {
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       if (Date.now() - startedAt > 30 * 60 * 1000) throw new Error("解析超时，请重试");
+      onProgress?.(`解析 ${Math.round((Date.now() - startedAt) / 1000)} 秒`);
       const job = await request<any>("/api/v1/upload/process-status", {
         method: "POST",
         body: JSON.stringify({ job_token: started.job_token }),
@@ -165,10 +168,10 @@ export const uploadApi = {
       method: "POST",
       body: JSON.stringify({ preview_token: previewToken }),
     }),
-  generateQuestionsAsync: (previewToken: string, instructions?: string) =>
+  generateQuestionsAsync: (previewToken: string, instructions?: string, density?: string) =>
     request<any>("/api/v1/upload/generate", {
       method: "POST",
-      body: JSON.stringify({ preview_token: previewToken, async: true, instructions: instructions || undefined }),
+      body: JSON.stringify({ preview_token: previewToken, async: true, instructions: instructions || undefined, density: density || undefined }),
     }),
   generateStatus: (previewToken: string) =>
     request<any>("/api/v1/upload/generate-status", {

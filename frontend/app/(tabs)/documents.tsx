@@ -8,7 +8,7 @@ import { colors } from "../../src/tokens/colors";
 import { BackButton } from "../../src/components/PrototypeUI";
 import { CheckCircle2, ChevronLeft, ChevronRight, File, FileCode2, FileText, Folder, Image, MoreHorizontal, Play, Search, Trash2, X, type LucideIcon } from "lucide-react-native";
 import FilePicker, { SelectedFile } from "../../src/components/FilePicker";
-import { ImportMethodSheet, ImportMode, ImportProgressModal, ImportState } from "../../src/components/DocumentImportFlow";
+import { ImportDensity, ImportMethodSheet, ImportMode, ImportProgressModal, ImportState } from "../../src/components/DocumentImportFlow";
 import UploadPreviewModal from "../../src/components/UploadPreview";
 import { useThemeStore } from "../../src/store/useThemeStore";
 import { pruneEmptyStudyPlanItems } from "../../src/data/study-plan";
@@ -90,6 +90,7 @@ export default function DocumentLibraryScreen() {
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [genInstructions, setGenInstructions] = useState("");
+  const [genDensity, setGenDensity] = useState<ImportDensity>("standard");
   const loadDocuments = useCallback(async () => { const database = await getDb(); setDocuments(await database.getAllAsync("SELECT id, title, cat, content, source, last_read_at FROM documents")); }, []);
   useFocusEffect(useCallback(() => { loadDocuments().catch(() => setDocuments([])); }, [loadDocuments]));
 
@@ -126,19 +127,21 @@ export default function DocumentLibraryScreen() {
     setImportState({ status: "idle" });
     setShowPreview(true);
   };
-  const startImport = async (mode: ImportMode, instructions?: string) => {
+  const startImport = async (mode: ImportMode, instructions?: string, density?: ImportDensity) => {
     if (!selectedFile) return;
-    // 记住本次要求，重试时沿用；显式传入（含空串）则覆盖
+    // 记住本次要求和密度，重试时沿用；显式传入则覆盖
     const appliedInstructions = instructions !== undefined ? instructions : genInstructions;
+    const appliedDensity = density !== undefined ? density : genDensity;
     setGenInstructions(appliedInstructions);
+    setGenDensity(appliedDensity);
     setMethodSheetVisible(false);
     setImportState({ status: "working", mode, stage: "reading" });
     try {
-      const parsed = await uploadApi.uploadPdf(selectedFile, false);
+      const parsed = await uploadApi.uploadPdf(selectedFile, false, (progress) => setImportState({ status: "working", mode, stage: "reading", progress }));
       if (mode === "generate") {
         setImportState({ status: "working", mode, stage: "generating" });
         // 生成放到后端后台执行并轮询，避免长请求被代理约 100 秒超时掐断
-        await uploadApi.generateQuestionsAsync(parsed.preview_token, appliedInstructions || undefined);
+        await uploadApi.generateQuestionsAsync(parsed.preview_token, appliedInstructions || undefined, appliedDensity);
         const startedAt = Date.now();
         let pollFailures = 0;
         for (;;) {
@@ -158,7 +161,7 @@ export default function DocumentLibraryScreen() {
           if (generation.generation_status === "failed") throw new Error(generation.detail || "生成失败，请重试");
           setImportState({
             status: "working", mode, stage: "generating",
-            progress: generation.total_chunks ? `${generation.done_chunks}/${generation.total_chunks}` : undefined,
+            progress: generation.total_chunks ? `${generation.done_chunks}/${generation.total_chunks} 段` : undefined,
           });
         }
       } else {

@@ -186,10 +186,19 @@ async def generate_questions_from_text(text: str, section_title: str | None = No
     raise ValueError(f"Unexpected response format: {type(parsed)}")
 
 
-async def generate_questions_from_text(text: str, section_title: str | None = None, user_instructions: str | None = None) -> list[dict[str, Any]]:
+# chars-per-question divisor and per-chunk bounds for each question density.
+_DENSITY_RULES = {
+    "low": (2400, 3, 8),
+    "standard": (1200, 6, 12),
+    "high": (800, 8, 16),
+}
+
+
+async def generate_questions_from_text(text: str, section_title: str | None = None, user_instructions: str | None = None, density: str = "standard") -> list[dict[str, Any]]:
     """Generate concise cards with a predictable amount of coverage per chunk."""
     truncated = text[:400_000]
-    target_count = min(12, max(6, (len(truncated) + 1199) // 1200))
+    chars_per_question, minimum, maximum = _DENSITY_RULES.get(density, _DENSITY_RULES["standard"])
+    target_count = min(maximum, max(minimum, (len(truncated) + chars_per_question - 1) // chars_per_question))
     section_context = f" Current section: {section_title}." if section_title else ""
     instructions_context = ""
     if user_instructions and user_instructions.strip():
@@ -202,11 +211,13 @@ async def generate_questions_from_text(text: str, section_title: str | None = No
         prompt=(
             f"Generate exactly {target_count} Chinese study questions from the material below."
             " Cover both primary and meaningful secondary knowledge points without padding the batch"
-            f" with duplicate or weak questions. Stay within the flashcard answer length.{section_context}"
+            " with duplicate or weak questions. Stay within the flashcard answer length."
+            " Every question object must include exactly 1 non-empty tag — never return an empty tags array."
+            f"{section_context}"
             f"{instructions_context}"
             f"\n\nMaterial:\n{truncated}"
         ),
-        max_tokens=6000,
+        max_tokens=8000 if density == "high" else 6000,
         system=SYSTEM_PROMPT,
     )
     text_clean = result.strip()

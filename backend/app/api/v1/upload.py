@@ -308,7 +308,10 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
                 all_sections.append(section_title)
         try:
             questions = await generate_questions_from_text(
-                chunk["content"], section_title=title, user_instructions=preview.get("instructions"),
+                chunk["content"],
+                section_title=title,
+                user_instructions=preview.get("instructions"),
+                density=preview.get("density", "standard"),
             )
         except Exception as exc:
             # Preserve successfully generated sections and surface this one as
@@ -329,7 +332,10 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
                 "a": _compact_answer(str(question["a"])),
                 "source_document_id": preview["document_id"],
                 "source_document_ids": [preview["document_id"]],
-                "tags": _exclude_filename_tags(_normalize_question_tags(question.get("tags")), preview["file_name"]) or preview.get("tags", [])[:1],
+                # 兜底链：AI 标签 → 文档标签 → 题目分类，保证预览阶段不出现空标签
+                "tags": _exclude_filename_tags(_normalize_question_tags(question.get("tags")), preview["file_name"])
+                    or preview.get("tags", [])[:1]
+                    or _normalize_question_tags([str(question["cat"])]),
                 "_section": title,
             })
             generated.append(item)
@@ -569,6 +575,9 @@ async def generate_preview_questions(body: dict, _user_id: str = Depends(get_cur
     instructions = str(body.get("instructions", "") or "").strip()[:500]
     if instructions:
         preview["instructions"] = instructions
+    density = str(body.get("density", "") or "").strip()
+    if density in ("low", "standard", "high"):
+        preview["density"] = density
 
     if body.get("async"):
         # Long generation must not outlive the proxy's ~100s idle timeout, so it

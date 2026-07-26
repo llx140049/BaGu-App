@@ -111,15 +111,29 @@ export const uploadApi = {
     if (!storageResponse.ok) {
       throw new Error(`Storage upload error ${storageResponse.status}: ${await storageResponse.text()}`);
     }
-    return request<any>("/api/v1/upload/process-direct", {
+    const started = await request<any>("/api/v1/upload/process-direct", {
       method: "POST",
       body: JSON.stringify({
         filename: file.name,
         object_key: upload.object_key,
         mime_type: uploadMimeType(file),
         generate_questions: generateQuestions,
+        async: true,
       }),
     });
+    // 大 PDF 的解析在后端后台执行并轮询，避免长请求被代理约 100 秒超时掐断
+    if (!started.job_token) return started; // 兼容未升级的后端（同步返回）
+    const startedAt = Date.now();
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (Date.now() - startedAt > 30 * 60 * 1000) throw new Error("解析超时，请重试");
+      const job = await request<any>("/api/v1/upload/process-status", {
+        method: "POST",
+        body: JSON.stringify({ job_token: started.job_token }),
+      });
+      if (job.processing_status === "done") return job.preview;
+      if (job.processing_status === "failed") throw new Error(job.detail || "解析失败，请重试");
+    }
   },
   uploadPdfViaApi: async (
     file: { uri: string; name: string; bytes?: ArrayBuffer; mimeType?: string },

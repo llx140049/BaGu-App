@@ -26,6 +26,7 @@ UPLOAD_DIR = Path(settings.UPLOAD_DIR)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _preview_store: dict[str, dict] = {}
+_processing_jobs: dict[str, dict] = {}
 CHUNK_MAX_CHARS = 12_000
 LARGE_PDF_BYTES = 15 * 1024 * 1024
 
@@ -372,11 +373,7 @@ async def create_direct_upload_url(body: dict, user_id: str = Depends(get_curren
     return {"upload_url": upload_url, "object_key": object_key}
 
 
-@router.post("/process-direct")
-async def process_direct_upload(
-    body: dict,
-    user_id: str = Depends(get_current_user),
-):
+async def _process_direct_impl(body: dict, user_id: str) -> dict:
     """Download a completed direct upload and reuse the normal parsing flow."""
     filename = _safe_upload_filename(str(body.get("filename", "")))
     _file_extension(filename)
@@ -416,6 +413,48 @@ async def process_direct_upload(
                 await object_storage.delete([object_key])
             except Exception:
                 pass
+
+
+@router.post("/process-direct")
+async def process_direct_upload(
+    body: dict,
+    user_id: str = Depends(get_current_user),
+):
+    """Parsing a large PDF can outlive the proxy's ~100s idle timeout, so with
+    async:true the work runs as a background job and the client polls
+    /process-status. Without the flag the legacy synchronous path is kept."""
+    if body.get("async"):
+        job_token = str(uuid.uuid4())
+        _processing_jobs[job_token] = {"status": "processing"}
+
+        async def _run_processing() -> None:
+            try:
+                result = await _process_direct_impl(body, user_id)
+                _processing_jobs[job_token] = {"status": "done", "result": result}
+            except HTTPException as exc:
+                _processing_jobs[job_token] = {"status": "failed", "error": str(exc.detail)}
+            except Exception as exc:
+                _processing_jobs[job_token] = {"status": "failed", "error": str(exc)}
+
+        asyncio.create_task(_run_processing())
+        return {"job_token": job_token, "processing_status": "processing"}
+    return await _process_direct_impl(body, user_id)
+
+
+@router.post("/process-status")
+async def process_direct_status(body: dict, _user_id: str = Depends(get_current_user)):
+    """Poll a background parsing job started by /process-direct with async:true."""
+    job_token = str(body.get("job_token", ""))
+    job = _processing_jobs.get(job_token)
+    if job is None:
+        raise HTTPException(404, detail="导入任务不存在或已过期，请重新上传")
+    if job["status"] == "done":
+        _processing_jobs.pop(job_token, None)
+        return {"processing_status": "done", "preview": job["result"]}
+    if job["status"] == "failed":
+        _processing_jobs.pop(job_token, None)
+        return {"processing_status": "failed", "detail": job["error"]}
+    return {"processing_status": "processing"}
 
 
 @router.post("/pdf")

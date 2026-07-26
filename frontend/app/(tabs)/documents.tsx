@@ -89,6 +89,7 @@ export default function DocumentLibraryScreen() {
   const [deleteRelatedQuestions, setDeleteRelatedQuestions] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [genInstructions, setGenInstructions] = useState("");
   const loadDocuments = useCallback(async () => { const database = await getDb(); setDocuments(await database.getAllAsync("SELECT id, title, cat, content, source, last_read_at FROM documents")); }, []);
   useFocusEffect(useCallback(() => { loadDocuments().catch(() => setDocuments([])); }, [loadDocuments]));
 
@@ -125,8 +126,11 @@ export default function DocumentLibraryScreen() {
     setImportState({ status: "idle" });
     setShowPreview(true);
   };
-  const startImport = async (mode: ImportMode) => {
+  const startImport = async (mode: ImportMode, instructions?: string) => {
     if (!selectedFile) return;
+    // 记住本次要求，重试时沿用；显式传入（含空串）则覆盖
+    const appliedInstructions = instructions !== undefined ? instructions : genInstructions;
+    setGenInstructions(appliedInstructions);
     setMethodSheetVisible(false);
     setImportState({ status: "working", mode, stage: "reading" });
     try {
@@ -134,7 +138,7 @@ export default function DocumentLibraryScreen() {
       if (mode === "generate") {
         setImportState({ status: "working", mode, stage: "generating" });
         // 生成放到后端后台执行并轮询，避免长请求被代理约 100 秒超时掐断
-        await uploadApi.generateQuestionsAsync(parsed.preview_token);
+        await uploadApi.generateQuestionsAsync(parsed.preview_token, appliedInstructions || undefined);
         const startedAt = Date.now();
         let pollFailures = 0;
         for (;;) {

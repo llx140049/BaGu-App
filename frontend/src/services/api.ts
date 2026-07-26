@@ -165,10 +165,10 @@ export const uploadApi = {
       method: "POST",
       body: JSON.stringify({ preview_token: previewToken }),
     }),
-  generateQuestionsAsync: (previewToken: string) =>
+  generateQuestionsAsync: (previewToken: string, instructions?: string) =>
     request<any>("/api/v1/upload/generate", {
       method: "POST",
-      body: JSON.stringify({ preview_token: previewToken, async: true }),
+      body: JSON.stringify({ preview_token: previewToken, async: true, instructions: instructions || undefined }),
     }),
   generateStatus: (previewToken: string) =>
     request<any>("/api/v1/upload/generate-status", {

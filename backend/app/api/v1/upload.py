@@ -307,7 +307,9 @@ async def _generate_preview_questions(preview: dict) -> tuple[list[dict], dict]:
             if section_title not in all_sections:
                 all_sections.append(section_title)
         try:
-            questions = await generate_questions_from_text(chunk["content"], section_title=title)
+            questions = await generate_questions_from_text(
+                chunk["content"], section_title=title, user_instructions=preview.get("instructions"),
+            )
         except Exception as exc:
             # Preserve successfully generated sections and surface this one as
             # uncovered in the preview instead of losing the entire import.
@@ -563,6 +565,10 @@ async def generate_preview_questions(body: dict, _user_id: str = Depends(get_cur
     preview = _preview_store.get(token)
     if preview is None:
         raise HTTPException(404, detail="导入数据已过期，请重新选择文件")
+
+    instructions = str(body.get("instructions", "") or "").strip()[:500]
+    if instructions:
+        preview["instructions"] = instructions
 
     if body.get("async"):
         # Long generation must not outlive the proxy's ~100s idle timeout, so it
